@@ -1,0 +1,3 @@
+[submodule "log-sump-container"]
+	path = log-sump-container
+	url = git@github.com:oliben67/log-sump-extended.git
