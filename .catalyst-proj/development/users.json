@@ -1,0 +1,11 @@
+{
+  "users": [
+    {
+      "name": "Olivier Steck",
+      "roles": ["Admin"],
+      "registered": "2026-08-23",
+      "active": true,
+      "notes": "First registered user, added during /sync-framework 0.8.0 to satisfy the INV-16 at-least-one-active-user requirement. Identity from this repo's git config (user.name); role defaulted to Admin since they're the sole operator across every role so far -- adjust via /user-assign-role or /role-modify as the project grows."
+    }
+  ]
+}

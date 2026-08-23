@@ -1,0 +1,36 @@
+{
+  "roles": [
+    {
+      "name": "Product Owner",
+      "actions": ["/create-req", "approve/prioritize requirements", "/create-feature", "/roadmap-add", "/roadmap-update", "/roadmap-merge", "/roadmap-remove"]
+    },
+    {
+      "name": "Scrum Master / Delivery Lead",
+      "actions": ["/create-epic", "/create-story", "/create-task", "/create-spike", "/create-sprint", "/show-backlog", "/status"]
+    },
+    {
+      "name": "Tech Lead / Architect",
+      "actions": ["approve rule changes and new domains", "vet a requirement's rule target(s)"]
+    },
+    {
+      "name": "Developer",
+      "actions": ["/create-bug", "/create-req (implementation-driven)", "/create-task", "implement REQ-/BUG-", "/status on tasks/stories"]
+    },
+    {
+      "name": "QA / Tester",
+      "actions": ["/create-bug", "verify a rule's test coverage", "/status on test-plan items"]
+    },
+    {
+      "name": "Stakeholder",
+      "actions": ["propose FEAT- ideas", "propose roadmap items"]
+    },
+    {
+      "name": "Release Manager",
+      "actions": ["/sync-framework", "/catalyzer", "cutting releases"]
+    },
+    {
+      "name": "Admin",
+      "actions": ["/user-add", "/user-remove", "/user-modify", "/user-assign-role", "/user-list", "/role-add", "/role-modify", "/freeze"]
+    }
+  ]
+}
