@@ -1,0 +1,18 @@
+{
+  "name": "correlator-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "correlator: correlate container telemetry with service logs on a shared clickable timeline",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit -p renderer/src",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.10",
+    "typescript": "^7.0.2",
+    "vitest": "^3.0.0"
+  }
+}
