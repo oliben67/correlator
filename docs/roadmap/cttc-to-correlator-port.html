@@ -1,0 +1,1110 @@
+<title>correlator Port Roadmap</title>
+<meta name="description" content="Detailed engineering roadmap porting cttc to correlator: Sump, data-stream plugins, secondary-Sump federation, and the recording/track/project data model.">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fragment+Mono:ital@0;1&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600;6..72,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --paper: #F3F6F6;
+    --paper-raised: #EAF0EF;
+    --ink: #12262A;
+    --ink-soft: #3C5459;
+    --ink-faint: #6B8388;
+    --line: #D3DEDD;
+    --line-strong: #B7C7C5;
+    --accent: #0E6E76;
+    --accent-ink: #FFFFFF;
+    --accent-tint: #DCEEEE;
+    --warn: #A9650F;
+    --warn-tint: #F5E6D2;
+    --code-bg: #E7EFEE;
+    --shadow: 0 1px 2px rgba(18,38,42,0.06), 0 6px 20px -8px rgba(18,38,42,0.12);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #0A1414;
+      --paper-raised: #0F1B1B;
+      --ink: #DCEBE9;
+      --ink-soft: #A9C2C0;
+      --ink-faint: #6F8A89;
+      --line: #1E3336;
+      --line-strong: #2B4649;
+      --accent: #55C4CC;
+      --accent-ink: #06181A;
+      --accent-tint: #123033;
+      --warn: #E3A34E;
+      --warn-tint: #2E2312;
+      --code-bg: #0F1F20;
+      --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 12px 30px -12px rgba(0,0,0,0.55);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --paper: #0A1414;
+    --paper-raised: #0F1B1B;
+    --ink: #DCEBE9;
+    --ink-soft: #A9C2C0;
+    --ink-faint: #6F8A89;
+    --line: #1E3336;
+    --line-strong: #2B4649;
+    --accent: #55C4CC;
+    --accent-ink: #06181A;
+    --accent-tint: #123033;
+    --warn: #E3A34E;
+    --warn-tint: #2E2312;
+    --code-bg: #0F1F20;
+    --shadow: 0 1px 2px rgba(0,0,0,0.35), 0 12px 30px -12px rgba(0,0,0,0.55);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Newsreader', Georgia, 'Times New Roman', serif;
+    font-optical-sizing: auto;
+    font-size: 17px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  code, .mono {
+    font-family: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+
+  code {
+    background: var(--code-bg);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    font-size: 0.86em;
+    color: var(--ink);
+  }
+
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 1rem 1.1rem;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    line-height: 1.55;
+  }
+  pre code { background: none; padding: 0; }
+
+  /* ---------- Shell layout ---------- */
+  .shell {
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    max-width: 1240px;
+    margin: 0 auto;
+    align-items: start;
+  }
+
+  .rail {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 2.4rem 1.4rem 2.4rem 2rem;
+    border-right: 1px solid var(--line);
+    scrollbar-width: thin;
+  }
+
+  .rail-brand {
+    font-family: 'Fragment Mono', ui-monospace, monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 1.5rem;
+  }
+
+  .toc { list-style: none; margin: 0; padding: 0; position: relative; }
+  .toc::before {
+    content: "";
+    position: absolute;
+    left: 0.42rem;
+    top: 0.6rem;
+    bottom: 0.6rem;
+    width: 1px;
+    background: var(--line-strong);
+  }
+  .toc li { position: relative; padding-left: 1.3rem; margin: 0; }
+  .toc a {
+    display: block;
+    padding: 0.32rem 0;
+    color: var(--ink-soft);
+    text-decoration: none;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.82rem;
+    line-height: 1.35;
+    border-radius: 3px;
+    transition: color 0.15s ease;
+  }
+  .toc a::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.62rem;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--paper);
+    border: 1.5px solid var(--line-strong);
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .toc a:hover { color: var(--ink); }
+  .toc a.active { color: var(--accent); font-weight: 600; }
+  .toc a.active::before { background: var(--accent); border-color: var(--accent); }
+  .toc .num { color: var(--ink-faint); margin-right: 0.45em; }
+  .toc a.active .num { color: var(--accent); }
+
+  main {
+    min-width: 0;
+    padding: 3.2rem clamp(1.4rem, 4vw, 4rem) 6rem;
+  }
+
+  .hero {
+    margin-bottom: 3rem;
+    padding-bottom: 2.2rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .hero .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 0.9rem;
+  }
+  h1 {
+    font-family: 'Fragment Mono', ui-monospace, monospace;
+    font-weight: 400;
+    font-size: clamp(1.9rem, 4vw, 2.7rem);
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+    margin: 0 0 0.9rem;
+    text-wrap: balance;
+    max-width: 18ch;
+  }
+  .hero .status {
+    max-width: 62ch;
+    color: var(--ink-soft);
+    font-size: 0.98rem;
+    margin: 0;
+  }
+  .hero .status code { font-size: 0.82em; }
+
+  .thesis {
+    margin-top: 1.6rem;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0,1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .thesis > div {
+    background: var(--paper-raised);
+    padding: 1rem 1.1rem;
+  }
+  .thesis .k {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin: 0 0 0.35rem;
+  }
+  .thesis .v {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.92rem;
+    font-weight: 600;
+    color: var(--ink);
+    margin: 0;
+  }
+
+  section { margin-bottom: 3.4rem; scroll-margin-top: 1.4rem; }
+  section > .sect-head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    margin-bottom: 1.1rem;
+  }
+  section > .sect-head .n {
+    font-family: 'Fragment Mono', monospace;
+    color: var(--accent);
+    font-size: 1.05rem;
+    font-variant-numeric: tabular-nums;
+  }
+  h2 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 1.5rem;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h3 {
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 1.14rem;
+    margin: 1.7rem 0 0.6rem;
+    color: var(--ink);
+  }
+  h3 .n { color: var(--accent-tint); }
+  h3 .tag {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 500;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--warn);
+    background: var(--warn-tint);
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    vertical-align: middle;
+    margin-left: 0.6rem;
+  }
+
+  p { max-width: 68ch; margin: 0 0 1rem; }
+  ul, ol { max-width: 68ch; padding-left: 1.3rem; margin: 0 0 1rem; }
+  li { margin-bottom: 0.4rem; }
+  li:last-child { margin-bottom: 0; }
+  strong { font-weight: 700; }
+
+  .callout {
+    max-width: 68ch;
+    border-left: 3px solid var(--warn);
+    background: var(--warn-tint);
+    padding: 0.85rem 1.1rem;
+    border-radius: 0 8px 8px 0;
+    margin: 1rem 0;
+    font-size: 0.95rem;
+  }
+  .callout p { margin: 0; max-width: none; }
+
+  /* ---------- Tables ---------- */
+  .tbl-wrap { overflow-x: auto; margin: 1rem 0 1.4rem; border: 1px solid var(--line); border-radius: 8px; }
+  table { border-collapse: collapse; width: 100%; min-width: 480px; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 0.6rem 0.85rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th {
+    background: var(--paper-raised);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--paper-raised); }
+  td code, th code { white-space: nowrap; }
+
+  /* ---------- Phase flow ---------- */
+  .phaseflow { position: relative; margin: 1.4rem 0 1rem; }
+  .phaseflow::before {
+    content: "";
+    position: absolute;
+    left: 1.55rem;
+    top: 0.6rem;
+    bottom: 2.4rem;
+    width: 1px;
+    background: repeating-linear-gradient(to bottom, var(--line-strong) 0 4px, transparent 4px 8px);
+  }
+  .phase {
+    position: relative;
+    display: grid;
+    grid-template-columns: 3.1rem minmax(0,1fr);
+    gap: 0.9rem;
+    margin-bottom: 1.1rem;
+  }
+  .phase .badge {
+    position: relative;
+    width: 3.1rem; height: 3.1rem;
+    border-radius: 50%;
+    background: var(--paper-raised);
+    border: 1px solid var(--line-strong);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Fragment Mono', monospace;
+    font-size: 1rem;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+  }
+  .phase.exploratory .badge { color: var(--ink-faint); border-style: dashed; }
+  .phase-card {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 1rem 1.2rem 1.1rem;
+    box-shadow: var(--shadow);
+  }
+  .phase-card h4 {
+    margin: 0 0 0.6rem;
+    font-family: 'Newsreader', serif;
+    font-weight: 600;
+    font-size: 1.02rem;
+  }
+  .phase-card dl { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 0.25rem 0.8rem; margin: 0; font-size: 0.88rem; }
+  .phase-card dt { font-family: 'IBM Plex Mono', monospace; font-size: 0.68rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-faint); align-self: baseline; padding-top: 0.15rem; }
+  .phase-card dd { margin: 0; color: var(--ink-soft); }
+  .phase-card dd.new { color: var(--warn); }
+
+  /* ---------- Vocabulary strip ---------- */
+  .vocab { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 1rem 0 1.4rem; padding: 0; list-style: none; }
+  .vocab li {
+    margin: 0;
+    display: flex; align-items: center; gap: 0.5rem;
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0.4rem 0.9rem 0.4rem 0.7rem;
+    font-size: 0.84rem;
+  }
+  .vocab .old { color: var(--ink-faint); text-decoration: line-through; font-family: 'IBM Plex Mono', monospace; font-size: 0.8em; }
+  .vocab .arrow { color: var(--ink-faint); }
+  .vocab .new { font-weight: 600; color: var(--accent); }
+
+  footer {
+    max-width: 68ch;
+    padding-top: 2rem;
+    margin-top: 2rem;
+    border-top: 1px solid var(--line);
+    color: var(--ink-faint);
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; }
+    .rail { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--line); padding: 1.4rem 1.4rem; }
+    .toc { columns: 2; column-gap: 1.5rem; }
+    .toc::before { display: none; }
+    .toc li { padding-left: 0.9rem; }
+    .toc a::before { display: none; }
+    main { padding: 2.2rem 1.3rem 4rem; }
+    .thesis { grid-template-columns: 1fr; }
+    .phase { grid-template-columns: 2.4rem minmax(0,1fr); }
+    .phase .badge { width: 2.4rem; height: 2.4rem; font-size: 0.82rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; scroll-behavior: auto !important; }
+  }
+
+  html { scroll-behavior: smooth; }
+
+  /* ---------- Sidebar mockup ---------- */
+  .sidebar-demo {
+    display: flex;
+    gap: 1.6rem;
+    align-items: stretch;
+    margin: 1.3rem 0 1.6rem;
+    max-width: 68ch;
+  }
+  .sidebar-mock {
+    flex: 0 0 auto;
+    width: 168px;
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 0.6rem;
+    box-shadow: var(--shadow);
+  }
+  .sidebar-mock .sb-item {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.5rem 0.55rem;
+    border-radius: 6px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+  }
+  .sidebar-mock .sb-item.active {
+    background: var(--accent-tint);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .sidebar-mock .sb-item.stub { opacity: 0.55; }
+  .sidebar-mock .sb-icon {
+    width: 17px; height: 17px;
+    flex-shrink: 0;
+    color: inherit;
+  }
+  .sidebar-mock .sb-icon svg { width: 100%; height: 100%; display: block; fill: currentColor; }
+  .sidebar-mock .sb-stub-tag {
+    margin-left: auto;
+    font-size: 0.6rem;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--warn);
+    background: var(--warn-tint);
+    padding: 0.08rem 0.35rem;
+    border-radius: 999px;
+  }
+  .sidebar-demo-caption {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    font-size: 0.88rem;
+    color: var(--ink-soft);
+  }
+  .sidebar-demo-caption p { margin: 0; }
+
+  .icon-strip { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 1rem 0 1.4rem; }
+  .icon-strip .swatch {
+    display: flex; align-items: center; gap: 0.5rem;
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 0.35rem 0.8rem 0.35rem 0.5rem;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 0.78rem;
+    color: var(--ink-soft);
+  }
+  .icon-strip .swatch .ico { width: 16px; height: 16px; color: var(--accent); }
+  .icon-strip .swatch .ico svg { width: 100%; height: 100%; fill: currentColor; }
+
+  /* ---------- Stability evidence ---------- */
+  .stat-row { display: flex; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin: 1.2rem 0; max-width: 68ch; }
+  .stat-row > div { background: var(--paper-raised); padding: 0.9rem 1.1rem; flex: 1 1 0; }
+  .stat-row .num { font-family: 'Fragment Mono', monospace; font-size: 1.7rem; color: var(--warn); line-height: 1; font-variant-numeric: tabular-nums; }
+  .stat-row .lbl { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 0.35rem; }
+
+  .saga { max-width: 68ch; margin: 1.2rem 0 1.4rem; border-left: 2px solid var(--warn); padding-left: 1rem; display: flex; flex-direction: column; gap: 0.7rem; }
+  .saga .step { font-size: 0.9rem; }
+  .saga .step .id { font-family: 'IBM Plex Mono', monospace; color: var(--warn); font-weight: 600; margin-right: 0.4em; }
+  .saga .step .date { font-family: 'IBM Plex Mono', monospace; font-size: 0.72rem; color: var(--ink-faint); }
+
+  .sm-diagram { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 1.1rem 0 1.4rem; max-width: 68ch; font-family: 'IBM Plex Mono', monospace; font-size: 0.82rem; }
+  .sm-diagram .state { background: var(--paper-raised); border: 1px solid var(--line-strong); border-radius: 999px; padding: 0.32rem 0.85rem; color: var(--ink); }
+  .sm-diagram .state.warn { border-color: var(--warn); color: var(--warn); }
+  .sm-diagram .arr { color: var(--ink-faint); }
+</style>
+
+<div class="shell">
+  <nav class="rail" aria-label="Table of contents">
+    <p class="rail-brand">correlator · roadmap</p>
+    <ul class="toc" id="toc">
+      <li><a href="#s0"><span class="num">0</span>Purpose</a></li>
+      <li><a href="#s1"><span class="num">1</span>Vocabulary map</a></li>
+      <li><a href="#s2"><span class="num">2</span>What must not regress</a></li>
+      <li><a href="#s3"><span class="num">3</span>Current state of cttc</a></li>
+      <li><a href="#s4"><span class="num">4</span>Target stack</a></li>
+      <li><a href="#s5"><span class="num">5</span>Sump</a></li>
+      <li><a href="#s6"><span class="num">6</span>Data streams</a></li>
+      <li><a href="#s7"><span class="num">7</span>Secondary Sumps</a></li>
+      <li><a href="#s8"><span class="num">8</span>Data model</a></li>
+      <li><a href="#s9"><span class="num">9</span>UI/UX parity</a></li>
+      <li><a href="#s10"><span class="num">10</span>Testing &amp; CI</a></li>
+      <li><a href="#s11"><span class="num">11</span>Phased roadmap</a></li>
+      <li><a href="#s12"><span class="num">12</span>Risks &amp; open questions</a></li>
+      <li><a href="#s13"><span class="num">13</span>Traceability</a></li>
+    </ul>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <p class="eyebrow">Engineering roadmap · proposed</p>
+      <h1>CTTC → correlator</h1>
+      <p class="status">
+        Grounded in a direct code survey of <code>cttc</code> and the
+        <code>log-sump-extended</code> submodule (<code>log-sump-container/</code>,
+        commit <code>e2dc824</code>). Traced from
+        <code>FEAT-0001</code> in the catalyst deployment. 2026-08-23.
+      </p>
+      <div class="thesis">
+        <div>
+          <p class="k">Gateway becomes</p>
+          <p class="v">Sump — containerized, pluggable transports</p>
+        </div>
+        <div>
+          <p class="k">Docker host becomes</p>
+          <p class="v">Data stream — plugin-sourced, not Docker-only</p>
+        </div>
+        <div>
+          <p class="k">New capability</p>
+          <p class="v">Sumps can beget Sumps — real federation</p>
+        </div>
+      </div>
+    </header>
+
+    <section id="s0">
+      <div class="sect-head"><span class="n">00</span><h2>Purpose</h2></div>
+      <p>correlator is a from-scratch rewrite of cttc onto a new stack, with three structural changes beyond a technology swap:</p>
+      <ol>
+        <li><strong>Sump</strong> (renamed Gateway) becomes a properly containerized, pluggable-transport service instead of a fixed Docker-container-over-HTTP-with-SSH-fallback design.</li>
+        <li><strong>Data streams</strong> (renamed Docker host) become a plugin-sourced concept — Docker-over-SSH is the first plugin, not the only possible one.</li>
+        <li><strong>Sumps can beget Sumps.</strong> A host reachable as a data stream can be promoted to a first-class, independently-connectable Sump of its own — a real mesh, not just today's gateway peer-discovery scaffolding.</li>
+      </ol>
+      <p>Everything else — the correlation UX, the recording/track/snapshot model, the plugin-hostile lessons cttc already learned the hard way — is <strong>preserved and built on</strong>, not reinvented. Later sections cite the exact cttc/log-sump mechanisms each new piece replaces or extends, so the "why" stays traceable.</p>
+    </section>
+
+    <section id="s1">
+      <div class="sect-head"><span class="n">01</span><h2>Vocabulary map</h2></div>
+      <ul class="vocab">
+        <li><span class="old">Gateway</span><span class="arrow">→</span><span class="new">Sump</span></li>
+        <li><span class="old">Docker host</span><span class="arrow">→</span><span class="new">Data stream</span></li>
+        <li><span class="old">gateways.json</span><span class="arrow">→</span><span class="new">instance catalog</span></li>
+        <li><span class="old">record</span><span class="arrow">→</span><span class="new">recording</span></li>
+        <li><span class="old">metric export</span><span class="arrow">→</span><span class="new">track</span></li>
+        <li><span class="old">gateway mesh</span><span class="arrow">→</span><span class="new">Sump federation</span></li>
+        <li><span class="arrow">new</span><span class="new">project (.correlator)</span></li>
+      </ul>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>cttc term</th><th>correlator term</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Gateway</td><td><strong>Sump</strong></td><td>Containerized; provisioned locally (Docker present) or remotely over SSH (Docker absent locally).</td></tr>
+            <tr><td>Docker host</td><td><strong>Data stream</strong></td><td>Now plugin-sourced, not hardcoded to Docker+SSH.</td></tr>
+            <tr><td><code>~/.cttc/gateways.json</code></td><td><strong>correlator instance catalog</strong> (<code>.correlator/</code>)</td><td>JSON-shaped, SQLite-backed (§5.2), not a flat file.</td></tr>
+            <tr><td>Recording session (<code>sample_archive</code>)</td><td><strong>Recording</strong> (<code>*.recording</code>)</td><td>Same underlying archive mechanism, renamed.</td></tr>
+            <tr><td>Metric export / capture</td><td><strong>Track</strong> (<code>*.track</code>)</td><td>A single captured series; a recording contains one or more tracks.</td></tr>
+            <tr><td>Snapshot</td><td><strong>Snapshot</strong> (unchanged)</td><td>Still a point-in-time export to plain <code>.json</code>/text.</td></tr>
+            <tr><td><em>(none — new)</em></td><td><strong>Project</strong> (<code>*.correlator</code>)</td><td>Workspace file akin to VS Code's <code>.code-workspace</code>.</td></tr>
+            <tr><td>Gateway mesh (<code>gateway_mesh.py</code>)</td><td><strong>Secondary Sump federation</strong></td><td>Same prior art, extended: promotion flow, per-user private data streams.</td></tr>
+            <tr><td><code>create_app(extra_routers=...)</code></td><td><strong>Sump plugin registration</strong> (§5.4)</td><td>Compile-time composition kept as the safe core.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="s2">
+      <div class="sect-head"><span class="n">02</span><h2>What must not regress</h2></div>
+      <p>cttc's actual product value is the <strong>shared-timeline correlation UX</strong>: click a log line → the chart recenters/highlights on that timestamp (± a few seconds); click a point on a chart → the log panel jumps to the corresponding lines. This is implemented today via one shared, clickable timeline over CPU/MEM/NET charts, one event-density lane per log source, and virtual-scrolled log panels (<code>app/renderer/app.js</code>, <code>index.html</code>).</p>
+      <div class="callout"><p><strong>Every phase below is sequenced so this UX is working end-to-end as early as possible (Phase 5)</strong>, and nothing after it is allowed to degrade it.</p></div>
+    </section>
+
+    <section id="s3">
+      <div class="sect-head"><span class="n">03</span><h2>Current state of cttc <span style="font-family:'IBM Plex Mono',monospace;font-size:0.6em;font-weight:500;color:var(--ink-faint);text-transform:none;letter-spacing:0">(as surveyed)</span></h2></div>
+
+      <h3>3.1 Client</h3>
+      <p>Electron 43 app, <strong>not</strong> a website today. Renderer is mostly hand-rolled vanilla JS/HTML/CSS (<code>app.js</code>, dependency-free canvas charting + virtual-scrolled log panels) with a partial, incremental TypeScript module carve-out (<code>renderer/src/modules/{docker-host,gateway,events,preferences,redis-cli,status-bar}/</code>) using <code>jotai</code> + <code>preact</code> in a few spots — most state is still module-level globals and <code>localStorage</code>, not a full component tree. Build: esbuild, TypeScript for type-checking only, electron-builder → NSIS/DMG/AppImage.</p>
+
+      <h3>3.2 Gateway = Sump's predecessor</h3>
+      <p>A Docker container running <strong>log-sump</strong> (generic, CTTC-agnostic — daemon registry, Redis-Streams record store, query layer, <code>Transport</code> ABC, gateway/API auth, mesh routes) <strong>extended by log-sump-extended</strong> (a thin FastAPI-router shim, <code>create_app(extra_routers=[router])</code>, reproducing cttc's original wire protocol so the legacy renderer keeps working unmodified). Four s6-supervised processes per container: <code>log-listener</code>, <code>fluentd</code>, <code>redis</code> (embedded), <code>log-server</code>. Three connection modes client-side: <code>local</code>, <code>remote</code>, <code>remote-tunnel</code> (fallback only). Auth: shared bearer token, <code>X-CTTC-Token</code>.</p>
+
+      <h3>3.3 Docker-host connectivity <span class="tag">→ data-stream territory</span></h3>
+      <p><code>log_sump.common.transport.Transport</code> ABC, two implementations: <code>LocalTransport</code> (local <code>docker</code> CLI subprocess) and <code>SSHTransport</code> (<code>paramiko</code>, not the system <code>ssh</code> binary; <code>sudo</code> prepended remotely). Once connected: container listing, log streaming (<code>docker logs -f --timestamps</code>), stats polling. This <code>Transport</code> abstraction is the single best piece of prior art for the new data-stream plugin interface — it already anticipates non-Docker transports in its own docstring, it's just never had a second implementation.</p>
+
+      <h3>3.4 Recording / snapshot / capture mechanism <span class="tag">→ recording/track/snapshot</span></h3>
+      <p>Built on <code>log_sump.common.sample_archive.write_archive</code>. Produces <code>.cttc-record</code>/<code>.cttc-metric</code> binary archives today. <strong>This is a working mechanism to rename and reshape, not to build from zero.</strong></p>
+
+      <h3>3.5 Mesh / ownership scaffolding <span class="tag">→ prior art</span></h3>
+      <p><code>gateway.py</code> + <code>gateway_mesh.py</code>: <code>/ping</code>, <code>/gateways/sync</code> (peer discovery), <code>/gateway/ownership/claim|rotate</code> (signature-based, using an owner's SSH public key). Real, but currently single-tenant in spirit — no per-user data-stream visibility model (see §7.3).</p>
+
+      <h3>3.6 Plugin history <span class="tag">read before designing</span></h3>
+      <p>cttc <strong>already tried and abandoned</strong> a runtime, directory-scanned, dynamically-imported plugin loader (<code>log_sump.server.plugins</code>, driven by <code>Settings.plugins.directory</code>). It was removed in favor of the current compile-time <code>extra_routers</code> composition specifically because of <strong>empty/missing-plugin-directory-at-deploy-time bugs and state-leak edge cases</strong>. The new Sump/data-stream plugin system (§5.4, §6.3) must have an answer for those two failure modes, not just re-invent the directory scanner with different naming.</p>
+
+      <h3>3.7 Testing &amp; CI</h3>
+      <p>Client: Node built-in test runner (17 files) + one Electron E2E spec. Server: pytest + pytest-asyncio + fakeredis (46 files total). <strong>No automated test-on-push CI anywhere</strong> — the only GitHub Actions workflow in the whole tree is a manual-dispatch image-push job. Fixing this is in scope for Phase 0, not a someday item.</p>
+    </section>
+
+    <section id="s4">
+      <div class="sect-head"><span class="n">04</span><h2>Target stack</h2></div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Layer</th><th>cttc today</th><th>correlator target</th><th>Change</th></tr></thead>
+          <tbody>
+            <tr><td>UI framework</td><td>Vanilla JS + partial Preact</td><td><strong>React + TypeScript</strong></td><td>Rewrite</td></tr>
+            <tr><td>State</td><td>Module globals + partial Jotai</td><td><strong>Jotai</strong> (full)</td><td>Extend</td></tr>
+            <tr><td>Bundler / transpile</td><td>esbuild</td><td><strong>esbuild</strong> (retained — §4.1)</td><td>Unchanged</td></tr>
+            <tr><td>Packaging</td><td>electron-builder</td><td><strong>electron-builder</strong></td><td>Unchanged</td></tr>
+            <tr><td>Unit/UI tests</td><td>Node test runner</td><td><strong>Vitest</strong></td><td>Swap</td></tr>
+            <tr><td>Server language</td><td>Python 3.12</td><td><strong>Python</strong></td><td>Unchanged</td></tr>
+            <tr><td>Event/metric store</td><td>Redis (embedded per-container)</td><td><strong>Redis</strong></td><td>Revisit embedded-vs-shared (Phase 1)</td></tr>
+            <tr><td>Log ingestion</td><td>Fluentd (Ruby, vendored)</td><td><strong>Fluent Bit</strong></td><td><strong>Real swap</strong> (§4.2)</td></tr>
+            <tr><td>Observability</td><td>none</td><td><strong>OpenTelemetry</strong></td><td>Wholly net-new (§4.3)</td></tr>
+            <tr><td>Local metadata store</td><td>flat JSON</td><td><strong>JSON + SQLite</strong> (§5.2)</td><td>New</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>4.1 Bundler: esbuild retained</h3>
+      <p>Originally scoped as a swap to Webpack + Babel, for wider plugin ecosystem and more conventional Electron+React+TS starter-template precedent. <strong>Reconsidered and reversed</strong>: cttc already proves esbuild works well for this exact app shape (fast rebuilds, native TS/JSX support, simple config), and the Webpack swap was a speed-for-ecosystem trade-off rather than a hard requirement — not worth paying for without a concrete need for a Webpack-only loader/plugin. Phase 4's app shell scaffold builds on cttc's existing esbuild setup (<code>build/build-renderer.js</code>) rather than replacing it; Babel is dropped along with it.</p>
+
+      <h3>4.2 Fluentd → Fluent Bit</h3>
+      <p>cttc's Fluentd config + custom Ruby output plugin is vendored wholesale from log-sump. Fluent Bit does not run Ruby plugins — this is a genuine reimplementation of the log-forwarding hop, most naturally as a Fluent Bit output plugin, or by having Fluent Bit's built-in Redis output write directly in the shape <code>ingest.consumer</code> already expects. Needs its own spike (Phase 1) before committing to one approach.</p>
+
+      <h3>4.3 OpenTelemetry</h3>
+      <p>Confirmed absent from cttc, log-sump, and log-sump-extended entirely. Treat as new infrastructure: instrument the Sump server (traces across transport → ingest → query, metrics for stream depth/consumer lag) from Phase 1 onward so it's load-bearing from day one rather than retrofitted.</p>
+
+      <h3>4.4 Dev tooling</h3>
+      <p>Grounded in cttc's actual <code>pyproject.toml</code>/<code>package.json</code>, not assumed.</p>
+
+      <p><strong>Python (Sump server) — carried forward as-is, nothing new:</strong></p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Tool</th><th>Role</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><strong>uv</strong></td><td>Package manager / venv (<code>uv sync --frozen</code>)</td><td><code>uv.lock</code></td></tr>
+            <tr><td><strong>ruff</strong></td><td>Lint + format, one tool</td><td><code>line-length=100</code>, <code>target-version=py312</code>, rules <code>E,F,I,UP,B,ASYNC</code></td></tr>
+            <tr><td><strong>ty</strong></td><td>Type checker — Astral's Rust-based checker, <strong>not mypy</strong></td><td><code>python-version=3.12</code></td></tr>
+            <tr><td><strong>hatchling</strong></td><td>Build backend</td><td>—</td></tr>
+            <tr><td><strong>pytest</strong> + pytest-asyncio + pytest-cov + fakeredis + httpx</td><td>Testing</td><td><code>asyncio_mode=auto</code>, <code>--import-mode=importlib</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>No pre-commit config, no mypy, no black exist in cttc today — ruff already replaces all of that in one binary, so there's nothing to add here.</p>
+
+      <p><strong>React/Electron — mostly carried forward, with one deliberate addition.</strong> cttc's actual current <code>package.json</code> devDependencies are just <code>electron</code>, <code>electron-builder</code>, <code>esbuild</code>, <code>typescript</code>, <code>jotai</code>, <code>preact</code>, <code>@floating-ui/dom</code> — plain npm, <code>tsc --noEmit</code> for type-checking (strict mode), Node's built-in test runner. <strong>No linter or formatter of any kind exists today</strong> — a real gap relative to the Python side's ruff.</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Tool</th><th>Role</th><th>Change</th></tr></thead>
+          <tbody>
+            <tr><td><strong>esbuild</strong></td><td>Bundler</td><td>Carried forward (§4.1)</td></tr>
+            <tr><td><strong>TypeScript</strong></td><td>Type-checking, strict mode</td><td>Carried forward; retarget JSX from <code>preact</code> to <code>react</code></td></tr>
+            <tr><td><strong>React</strong>, <strong>Jotai</strong></td><td>UI framework / state</td><td>Per §4</td></tr>
+            <tr><td><strong>electron-builder</strong></td><td>Packaging</td><td>Carried forward</td></tr>
+            <tr><td><strong>Vitest</strong></td><td>Testing</td><td>Replaces Node's built-in test runner</td></tr>
+            <tr><td><strong>Biome</strong></td><td>Lint + format, one tool</td><td><span class="tag" style="margin-left:0">new</span> the closest JS/TS equivalent to ruff's single-binary philosophy</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Package manager: plain npm, matching cttc (<code>package-lock.json</code>) — no proposal to switch to pnpm/yarn without a concrete reason to.</p>
+    </section>
+
+    <section id="s5">
+      <div class="sect-head"><span class="n">05</span><h2>Sump <span style="font-family:'IBM Plex Mono',monospace;font-size:0.55em;font-weight:500;color:var(--ink-faint);text-transform:none;letter-spacing:0">renamed Gateway</span></h2></div>
+
+      <h3>5.1 Provisioning flow</h3>
+      <p>On correlator start:</p>
+      <ol>
+        <li>Detect local Docker (<code>docker info</code> or daemon socket probe).</li>
+        <li><strong>Docker present locally</strong> → install/run the Sump container locally (mirrors <code>ensureLocalContainer()</code>'s logic).</li>
+        <li><strong>Docker absent locally</strong> → prompt for SSH credentials to a remote host, verify Docker, provision the Sump there (mirrors <code>ensureRemoteContainer()</code> — SSH used for one-time provisioning only; ongoing traffic stays HTTP).</li>
+        <li>Either way, the provisioned Sump is registered into the <strong>correlator instance catalog</strong> (§5.2).</li>
+      </ol>
+
+      <h3>5.2 correlator instance catalog</h3>
+      <p>Lives in <code>.correlator/</code>. Structurally <strong>JSON documents, SQLite-backed</strong> — not a flat <code>gateways.json</code>-style file. JSON keeps the record shape close to what the app already reasons about; SQLite gives queryability and durability the flat file never had (concurrent-write safety, indexed lookups, audit history, last-seen timestamps).</p>
+      <pre><code>sumps(id, name, connection_type, host, port, catalog_json, created_at, last_seen_at)
+data_streams(id, sump_id, kind, source_ref, catalog_json, owner_user_id, is_private, created_at)
+secondary_sump_links(child_sump_id, parent_sump_id, promoted_from_data_stream_id, created_at)
+recordings(id, data_stream_id, sump_id, file_path, catalog_json, created_at)
+tracks(id, recording_id, data_stream_id, sump_id, file_path, catalog_json, created_at)</code></pre>
+      <p><code>catalog_json</code> columns hold the full JSON document (so the JSON shape stays authoritative and human-inspectable); SQLite columns are the queryable projection over it.</p>
+      <div class="callout">
+        <p><strong>Provenance:</strong> every recording and track keeps a foreign-key link back to the data stream (and transitively the sump) it was captured from — so "everything created via <code>[sump, data stream]</code>" is a plain indexed query, independent of which <em>project</em> (§8.3) a track/recording is later organized into.</p>
+      </div>
+      <p><strong>Catalog manipulation UI:</strong> the sumps/data-streams management UI operates directly on the <code>catalog_json</code> documents — a JSON view is the primary manipulation surface, not a bespoke per-field form schema (see §9.3).</p>
+
+      <h3>5.3 Auth model</h3>
+      <p><strong>One scheme, reused twice.</strong> Whatever token/credential mechanism correlator uses client → Sump is the <em>same</em> mechanism a Sump uses when talking to a secondary Sump it spawned (§7) — simplifying on cttc's single shared <code>X-CTTC-Token</code> model, no separate mesh-auth protocol needed.</p>
+      <div class="callout"><p>Open question: today's token is shared per-gateway, not per-user; §7.3 depends on per-user identity existing somewhere — either the correlator↔Sump scheme already carries it, or it needs to grow one before Phase 8.</p></div>
+
+      <h3>5.4 Sump plugin architecture <span class="tag">modeled on pytest/pluggy</span></h3>
+      <p><strong>Explicit direction: get this as close as possible to how pytest plugins work.</strong> pytest's own plugin system (<code>pluggy</code>) independently solves both of §3.6's failure modes (empty/missing plugin directory, state-leak edge cases) while hitting the actual goal: <strong>install any properly-packaged library into the Sump's container image and have it integrate with zero code changes to the Sump itself.</strong></p>
+
+      <p><strong>Discovery — entry points, not a scanned directory.</strong> A plugin is an ordinary installed Python package declaring itself under a dedicated entry-point group (e.g. <code>[project.entry-points."sump.plugins"]</code>, exactly like a pytest plugin declares itself under <code>pytest11</code>). At startup the Sump resolves that group via <code>importlib.metadata.entry_points(group="sump.plugins")</code> — a lookup over <em>installed package metadata</em>, not a filesystem scan. There is no "directory that might be empty or missing at deploy time" — a plugin either exists as a real, versioned dependency in the image, or it doesn't. <code>pip install correlator-sump-plugin-ssh</code> and it's discovered automatically, the same way <code>pip install pytest-xdist</code> just works.</p>
+
+      <p><strong>Default-on, explicit opt-out</strong> — matches pytest's own default (every installed plugin auto-loads), a Sump-level equivalent of <code>-p no:cacheprovider</code>/<code>PYTEST_DISABLE_PLUGIN_AUTOLOAD</code> rather than an activation allowlist.</p>
+
+      <p><strong>Hook specs, not one <code>extra_routers</code> list.</strong> Today's composition seam becomes an implementation detail the plugin manager drives internally — one hookspec among several a plugin implements whichever subset of:</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Hookspec</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>sump_plugin_info()</code></td><td>Name/version/capability manifest.</td></tr>
+            <tr><td><code>register_transport(manager)</code></td><td>Sump-level transport plugin; registers a <code>TransportPlugin</code> extending <code>Transport</code>'s <code>run</code>/<code>stream_lines</code>/<code>run_shell</code>.</td></tr>
+            <tr><td><code>register_data_source(manager)</code></td><td>Data-stream plugin (§6.3); list sources, stream logs, poll stats.</td></tr>
+            <tr><td><code>contribute_routes(app)</code></td><td>Optional custom API endpoints — where today's <code>extra_routers</code> seam lives now, generalized.</td></tr>
+            <tr><td><code>on_health_check()</code></td><td>Drives the sleep-mode mechanism below.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p><strong>This unifies §5.4 and §6.3 into one plugin system.</strong> A Sump transport plugin and a data-stream plugin are the same <code>PluginManager</code>, the same entry-point group — they differ only in which hookspecs they implement. The SSH plugin is expected to implement <em>both</em> <code>register_transport</code> and <code>register_data_source</code> from one package.</p>
+
+      <div class="callout">
+        <p><strong>Graceful degradation: sleep, don't crash.</strong> <code>on_health_check()</code> lets the plugin manager notice a plugin has become unavailable. When that happens, <strong>the functionality that specific plugin backs — not the whole Sump — transitions into a sleep-like/idle state</strong>: it stops polling/streaming, stops consuming resources, but stays registered in the catalog (§5.2) and resumes on its own once the health check passes again. <em>Scoping call flagged in §12: read as per-plugin, not whole-process — correct if the intent was the entire Sump going idle.</em></p>
+      </div>
+
+      <p>First plugin: <strong>SSH</strong> (direct port of <code>SSHTransport</code>/<code>paramiko</code>, implementing both <code>register_transport</code> and <code>register_data_source</code>).</p>
+
+      <h3>5.5 Stability discipline <span class="tag">Sump code and UI must not churn</span></h3>
+      <p><strong>Explicit priority, grounded in cttc's own history, not a general sentiment.</strong></p>
+
+      <div class="stat-row">
+        <div><div class="num">114</div><div class="lbl">total filed bugs</div></div>
+        <div><div class="num">19</div><div class="lbl">against Gateway / Docker-host / daemon</div></div>
+        <div><div class="num">~17%</div><div class="lbl">of the entire backlog</div></div>
+      </div>
+
+      <p>Two concrete illustrations, cited because they show <em>why</em> this happened, not just that it did:</p>
+
+      <p><strong>The status-pill saga</strong> — the same Gateway/Docker-host status pill, reworked three times in 48 hours:</p>
+      <div class="saga">
+        <div class="step"><span class="id">BUG-0071</span><span class="date">2026-08-05</span> — hover popup → right-click actions rework <em>(retired, reclassified as REQ-0055)</em></div>
+        <div class="step"><span class="id">BUG-0084</span><span class="date">2026-08-06</span> — "Current Status" right-click entry replaces the hover popup <em>(retired, reclassified as REQ-0062)</em></div>
+        <div class="step"><span class="id">BUG-0088</span><span class="date">2026-08-06</span> — leftover native title tooltip still showing underneath <em>(fixed)</em></div>
+      </div>
+      <p>A UI surface redesigned three times in two days is churn by definition — the single Gateway-adjacent element with the most rework in the whole backlog.</p>
+
+      <div class="callout">
+        <p><strong><code>BUG-0112</code></strong> (High severity) — <code>preview_containers</code> never self-healed an already-stuck daemon: the same root-cause lineage as the <code>db05568</code>/<code>e2dc824</code> fixes already cited in §3.5's <code>log-sump-extended</code> survey. A High-severity bug reaching the app layer from an implicit-state bug two layers down is exactly the failure mode a real state machine is meant to make structurally harder to reintroduce. (<code>BUG-0104</code> — log-sump's own container appearing in its own docker-host listing — is the historical bug §6.1's self-filter-by-default design already exists to prevent: direct validation that decision is grounded, not speculative.)</p>
+      </div>
+
+      <p>Translating "rock solid" into concrete practice for Sump-related work only:</p>
+
+      <p><strong>1. One explicit Sump lifecycle state machine, not scattered flags.</strong></p>
+      <div class="sm-diagram">
+        <span class="state">provisioning</span><span class="arr">→</span><span class="state">active</span><span class="arr">⇄</span><span class="state warn">unreachable</span><span class="arr">→</span><span class="state">retired</span>
+      </div>
+      <div class="sm-diagram">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--ink-faint);">data-stream / plugin level:</span>
+        <span class="state">active</span><span class="arr">⇄</span><span class="state warn">sleeping</span>
+      </div>
+      <p>The data-stream-level pair is precisely §5.4's <code>on_health_check()</code> mechanism, now framed as <em>one</em> state model spanning both levels rather than an ad-hoc per-feature flag. Implicit, duplicated, or UI-vs-backend-desynced state is the common root cause behind the daemon-registry (<code>BUG-0035</code>/<code>0036</code>/<code>0060</code>) and stuck-daemon (<code>BUG-0109</code>/<code>0112</code>) bugs above — a single authoritative state machine, with the UI as a pure read of it, structurally closes that class of bug rather than relying on catching each instance after the fact.</p>
+
+      <p><strong>2. Mine cttc's own bug history into a regression corpus before/during Phase 2.</strong> The 19 bugs above are a ready-made checklist: each becomes a named regression test against the new Sump code before Phase 2 is considered done.</p>
+      <p><strong>3. State-transition test coverage, not just feature coverage</strong> (§10). Every edge in the state machine above gets its own test — this is what actually catches "stuck in a weird state" bugs like <code>BUG-0112</code>, which feature-level happy-path tests reliably miss.</p>
+      <p><strong>4. Post-Phase-2 stability gate.</strong> Once the state machine and catalog schema (§5.2) ship, treat them as a stable contract: further changes go through a <code>REQ-NNNN</code> with an explicit migration note, not an ad-hoc patch — the discipline that was missing when the same pill got reworked three times in two days.</p>
+      <p><strong>5. Smaller UI surface, by construction.</strong> §9.5's sidebar consolidation already reduces the number of places Sump-related state can be shown inconsistently, compared to cttc's two-separate-sections-plus-status-pills design — a stability property of that decision, not just a UX simplification.</p>
+    </section>
+
+    <section id="s6">
+      <div class="sect-head"><span class="n">06</span><h2>Data streams <span style="font-family:'IBM Plex Mono',monospace;font-size:0.55em;font-weight:500;color:var(--ink-faint);text-transform:none;letter-spacing:0">renamed Docker host</span></h2></div>
+
+      <h3>6.1 Self-host detection</h3>
+      <p>Once connected to a Sump, correlator asks whether its own host is a Docker host. If so, its containers are offered as data-stream candidates — <strong>with the Sump's own container filtered out of the list by default</strong>, selectable manually for users who explicitly want to watch the Sump watching itself.</p>
+
+      <h3>6.2 Remote host via SSH</h3>
+      <p>User supplies another host the Sump can reach over SSH; the same container listing/log-streaming/stats-polling mechanics apply — reusing <code>SSHTransport</code>'s behavior, generalized under the new plugin interface (§6.3).</p>
+
+      <h3>6.3 Data-stream plugin interface</h3>
+      <p>Realized through the <strong>same</strong> pytest/pluggy-style plugin manager as §5.4 — a data-stream plugin is just a package implementing the <code>register_data_source</code> hookspec, not a second plugin system. Must be genuinely source-agnostic ("any data for logs and stats is welcomed") — no assumption of Docker or even containers, only "a source that can be listed, and that emits logs and/or stats."</p>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Plugin</th><th>Status</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><strong>ssh</strong></td><td>Phase 3, first to ship</td><td>Direct port of <code>SSHTransport</code>/<code>LocalTransport</code>.</td></tr>
+            <tr><td><strong>logstream</strong></td><td>Phase 7</td><td>See §6.4 — needs an upstream survey first.</td></tr>
+            <tr><td><strong>kibana</strong></td><td>Later / exploratory</td><td>Explicitly out of committed scope for now.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>6.4 logstream plugin <span class="tag">open item</span></h3>
+      <p>The spec: connect to "a logstream server running either as a container (or not)", "leverage the existing configuration but output it to stdout/stderr", with support for "any output type supported by logstream."</p>
+      <div class="callout">
+        <p><strong>The survey done for this roadmap could not confirm what output-type options actually exist</strong> — <code>log-sump-extended</code> is only a thin compat shim with zero output-sink abstraction of its own. The real "logstream server" is almost certainly <strong><code>log-sump</code> itself</strong> (pulled in as a pinned dependency, not checked out anywhere in this workspace). <strong>Action item before Phase 7: survey <code>log-sump</code> directly.</strong></p>
+      </div>
+      <p>Tentative shape either way: a lightweight process that takes log-sump's own daemon/stream config and taps its output onto stdout/stderr in a defined schema the Sump's ingestion can consume generically — but not locked in until the upstream survey happens.</p>
+
+      <h3>6.5 kibana plugin</h3>
+      <p>Confirmed in-scope-but-later. The only firm requirement so far: §6.3's plugin interface must not preclude it — Kibana as a source means "logs and stats from an Elasticsearch-backed system," a different shape from "logs and stats from a container/host." Treat as a design constraint on §6.3, not a Phase-N deliverable yet.</p>
+    </section>
+
+    <section id="s7">
+      <div class="sect-head"><span class="n">07</span><h2>Secondary Sumps <span style="font-family:'IBM Plex Mono',monospace;font-size:0.55em;font-weight:500;color:var(--ink-faint);text-transform:none;letter-spacing:0">mesh / federation</span></h2></div>
+
+      <h3>7.1 Promotion flow</h3>
+      <p>A host currently reachable as a data stream (§6) can be promoted: install a Sump container there too — same provisioning mechanics as §5.1, SSH-initiated from the parent Sump instead of from correlator directly.</p>
+
+      <h3>7.2 Independence + reachability</h3>
+      <p>The resulting secondary Sump's data stays reachable <em>from</em> the parent, but the secondary Sump is <strong>fully first-class</strong> afterward — any correlator instance can connect to it directly, exactly as it would a primary Sump. Build this on cttc's existing gateway-mesh prior art (<code>/gateways/sync</code>, ownership claim/rotate) rather than designing federation semantics from scratch.</p>
+
+      <h3>7.3 Per-user data-stream catalog + privacy <span class="tag">open question</span></h3>
+      <p>New requirement beyond what cttc's mesh code does today: <strong>the Sump maintains its own catalog of the data streams created through it, per user</strong>, with a per-data-stream privacy flag a user can set to keep a stream out of other users' view.</p>
+      <div class="callout">
+        <p>cttc's current auth is one shared token per gateway, not per-user identity. <strong>This needs a decision before Phase 8</strong>: either §5.3's shared auth scheme already carries a distinguishable per-user identity, or a lightweight identity layer needs to be added to the Sump. Track as the single biggest open question in this roadmap (§12).</p>
+      </div>
+    </section>
+
+    <section id="s8">
+      <div class="sect-head"><span class="n">08</span><h2>Data model</h2></div>
+
+      <h3>8.1 Containment rules <span style="font-family:'IBM Plex Mono',monospace;font-size:0.55em;font-weight:500;color:var(--ink-faint);text-transform:none;letter-spacing:0">as specified</span></h3>
+      <ul>
+        <li>A <strong>sump</strong> contains one or more <strong>data streams</strong>, and/or <strong>secondary sumps</strong>.</li>
+        <li>A <strong>recording</strong> (<code>*.recording</code>) contains one or more <strong>tracks</strong> (<code>*.track</code>).</li>
+        <li>A <strong>project</strong> (<code>*.correlator</code>) contains tracks, recordings, and their text/JSON exports (snapshots), organized however the user wants, <strong>by reference, never duplicated</strong>.</li>
+        <li>Independently of project membership, every recording/track retains a <strong>provenance link</strong> back to its data stream/sump, tracked in the catalog's SQLite store (§5.2).</li>
+      </ul>
+
+      <h3>8.2 File formats</h3>
+      <p><code>*.recording</code> and <code>*.track</code> are the renamed continuation of cttc's existing <code>.cttc-record</code>/<code>.cttc-metric</code> archives — same underlying mechanism, new extensions. Snapshots remain plain <code>.json</code>/text exports with no dedicated binary format.</p>
+
+      <h3>8.3 Projects <span style="font-family:'IBM Plex Mono',monospace;font-size:0.55em;font-weight:500;color:var(--ink-faint);text-transform:none;letter-spacing:0">*.correlator</span></h3>
+      <p>Modeled on VS Code's <code>.code-workspace</code>: a JSON file referencing recordings/tracks/exports by path plus a virtual-folder tree for logical grouping, independent of where the referenced files physically live. <strong>Default project</strong> always exists at a fixed location inside <code>.correlator/</code> and never relocates; "Save As" creates a <em>separate</em>, independently-managed file elsewhere.</p>
+
+      <h3>8.4 File-association / open-on-double-click</h3>
+      <p><code>*.track</code>, <code>*.recording</code>, and <code>*.correlator</code> files should open in correlator when double-clicked from the OS — electron-builder's <code>fileAssociations</code> config, plus the corresponding <code>open-file</code>/argv handling in the Electron main process.</p>
+    </section>
+
+    <section id="s9">
+      <div class="sect-head"><span class="n">09</span><h2>UI/UX parity</h2></div>
+
+      <h3>9.1 Protected core <span style="font-family:'IBM Plex Mono',monospace;font-size:0.55em;font-weight:500;color:var(--ink-faint);text-transform:none;letter-spacing:0">see §2</span></h3>
+      <p>Shared timeline, per-source event-density lanes, virtual-scrolled log panels, bidirectional click-to-correlate. No phase before Phase 5 should be considered blocking for this; no phase after it should touch it without an explicit regression check.</p>
+
+      <h3>9.2 Dialog/screen inventory <span style="font-family:'IBM Plex Mono',monospace;font-size:0.55em;font-weight:500;color:var(--ink-faint);text-transform:none;letter-spacing:0">naming only — behavior preserved</span></h3>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>cttc dialog</th><th>correlator equivalent</th></tr></thead>
+          <tbody>
+            <tr><td>Set Sources</td><td>Data-stream picker, nested under Sump (§9.5)</td></tr>
+            <tr><td>Gateway setup</td><td>Sump setup wizard</td></tr>
+            <tr><td>Docker-host remove/edit</td><td>Data-stream remove/edit, nested under Sump</td></tr>
+            <tr><td>Export metrics</td><td>Track/snapshot export</td></tr>
+            <tr><td>Snapshot</td><td>Snapshot (unchanged)</td></tr>
+            <tr><td>Events</td><td>Events section kept, redesigned from scratch (§9.5)</td></tr>
+            <tr><td>Recording start/pause/stop/resume</td><td>Recording controls (new file extension)</td></tr>
+            <tr><td>Redis CLI dev tool</td><td>Carried forward as-is</td></tr>
+            <tr><td>Opened Data / Analysis section</td><td><strong>Projects</strong> sidebar section (§9.5)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>9.3 Catalog JSON view</h3>
+      <p>Per §5.2: sump and data-stream management is done through a JSON view/editor over the catalog's <code>catalog_json</code> documents, not a bespoke settings-form component per entity type — one generic component, parameterized by schema/validation per entity kind, rather than N hand-built forms. The validation/schema layer behind that generic editor is itself real Phase 2/3 work.</p>
+
+      <h3>9.4 React/Jotai rewrite plan</h3>
+      <p>cttc's <code>renderer/src/modules/{docker-host,gateway,events,preferences,redis-cli,status-bar}/</code> and its <code>.tsx</code> files are already component-shaped even though they're Preact-on-esbuild today. Use their module boundaries as the starting point for correlator's React component tree — the implementation is a rewrite (Preact→React; esbuild itself is retained, §4.1), but the <em>seams</em> are proven.</p>
+
+      <h3>9.5 Sidebar scope &amp; icon assets</h3>
+      <p>cttc's action bar (real, substantial infrastructure — dock-left/right/detach, collapse-to-rail, popout-into-its-own-window, one-open-section-at-a-time) has <strong>four</strong> top-level sections today: Gateway, Docker Host, Events Capture, Analysis. <strong>correlator's initial sidebar is scoped to three</strong>, per explicit direction:</p>
+
+      <div class="sidebar-demo">
+        <div class="sidebar-mock" aria-hidden="true">
+          <div class="sb-item active">
+            <span class="sb-icon">
+              <svg viewBox="0 0 64 64"><path d="m 17.5,33.421378 h -2 v 2 h 2 z"/><path d="m 17.5,41.421378 h -2 v 2 h 2 z"/><path d="m 25.04279,34.242774 4.858018,3.239181 1.117345,-1.517789 -2.331849,-1.554809 h 8.579262 v 18.509617 c 0,2.554327 2.176391,4.627404 4.858021,4.627404 H 46.01 v -1.850961 h -3.886413 c -1.603149,0 -2.914813,-1.249399 -2.914813,-2.776443 V 34.409357 H 46.01 V 32.558399 H 39.208774 V 14.048782 c 0,-1.527044 1.311664,-2.776442 2.914813,-2.776442 H 46.01 V 9.4213776 h -3.886413 c -2.68163,0 -4.858021,2.0730774 -4.858021,4.6274044 v 18.509617 h -8.579262 l 2.331849,-1.554809 -1.117345,-1.517789 -4.858018,3.239181 c -0.262333,0.175842 -0.41779,0.453488 -0.41779,0.758896 0,0.305408 0.155457,0.583054 0.41779,0.758896 z"/><path d="m 11.5,19.421378 c 6.17,0 11,2.64 11,6 v 16 c 0,3.36 -4.83,6 -11,6 -6.17,0 -11,-2.64 -11,-6 v -16 c 0,-3.36 4.83,-6 11,-6 z m -9,22 c 0,1.89 3.7,4 9,4 5.3,0 9,-2.11 9,-4 v -4.52 c -1.97,1.53 -5.23,2.52 -9,2.52 -3.77,0 -7.03,-0.99 -9,-2.52 z m 0,-8 c 0,1.89 3.7,4 9,4 5.3,0 9,-2.11 9,-4 v -4.52 c -1.97,1.53 -5.23,2.52 -9,2.52 -3.77,0 -7.03,-0.99 -9,-2.52 z m 9,-4 c 5.3,0 9,-2.11 9,-4 0,-1.89 -3.7,-4 -9,-4 -5.3,0 -9,2.11 -9,4 0,1.89 3.7,4 9,4 z"/><path d="m 430.86,289.307 c -19.633,86.941 -97.368,152.139 -190.168,152.139 -75.429,0 -140.851,-43.111 -173.299,-105.916 -6.605,1.875 -13.417,3.199 -20.604,3.199 -13.107,0 -25.251,-3.65 -36.035,-9.508 34.068,94.188 124.139,161.82 229.938,161.82 121.892,0 222.962,-89.688 241.395,-206.494 -9.816,4.65 -20.666,7.459 -32.223,7.459 -6.604,0 -12.885,-1.114 -19.004,-2.699 z" transform="matrix(-0.03113159,0,0,-0.03202351,63.5,40.099857)"/><path d="m 54.638,187.71 c 24.96,-79.001 98.919,-136.441 186.055,-136.441 73.072,0 136.779,40.407 170.199,100.016 11.432,-6.892 24.669,-11.105 38.974,-11.105 3.939,0 7.714,0.576 11.497,1.158 C 421.967,58.901 338.011,1.67 240.692,1.67 120.411,1.67 20.345,88.982 0,203.5 c 12.951,-10.224 29.063,-16.583 46.789,-16.583 2.683,0 5.232,0.517 7.849,0.793 z" transform="matrix(-0.03113159,0,0,-0.03202351,63.5,40.099857)"/><path d="m 46.789,305.664 c 14.887,0 27.963,-7.619 35.647,-19.15 h 36.085 41.35 l 33.015,91.029 c 3.436,9.459 12.239,15.898 22.295,16.32 0.341,0.016 0.678,0.016 1.033,0.016 9.641,0 18.469,-5.617 22.507,-14.451 l 78.528,-170.861 12.305,19.587 c 4.584,7.278 12.881,12.154 21.227,11.606 l 27.237,-0.26 35.843,-0.337 c 7.619,11.867 20.861,19.777 36.004,19.777 23.67,0 42.846,-19.196 42.846,-42.851 0,-23.67 -19.176,-42.845 -42.846,-42.845 -13.578,0 -25.54,6.439 -33.391,16.286 l -37.584,0.356 -14.707,0.145 -29.303,-46.692 c -4.845,-7.699 -13.628,-12.153 -22.602,-11.557 -9.108,0.598 -17.134,6.119 -20.926,14.399 l -72.459,157.626 -18.324,-50.551 c -3.565,-9.801 -12.865,-16.342 -23.313,-16.342 H 117.828 80.696 C 72.881,226.682 60.677,219.98 46.789,219.98 c -23.665,0 -42.847,19.181 -42.847,42.831 0,23.638 19.182,42.853 42.847,42.853 z" transform="matrix(-0.03113159,0,0,-0.03202351,63.5,40.099857)"/></svg>
+            </span>
+            Sump
+          </div>
+          <div class="sb-item">
+            <span class="sb-icon">
+              <svg viewBox="0 0 64 64"><path d="M32,38a1.5,1.5,0,1,1,1.5-1.5A1.5,1.5,0,0,1,32,38Zm-6,7a8,8,0,1,1-8-8A8.00917,8.00917,0,0,1,26,45Zm-7-5.90967V44h4.90967A6.0055,6.0055,0,0,0,19,39.09033ZM12,45a5.96461,5.96461,0,0,0,.455,2.28638L17,44.44574V39.09033A6.00448,6.00448,0,0,0,12,45Zm11.90967,1H18.2868L13.521,48.97864A5.98568,5.98568,0,0,0,23.90967,46ZM54,44H40a1,1,0,0,0,0,2H54a1,1,0,0,0,0-2Zm0-4H40a1,1,0,0,0,0,2H54a1,1,0,0,0,0-2Zm0,8H40a1,1,0,0,0,0,2H54a1,1,0,0,0,0-2Zm8-29V29.35645a2.98967,2.98967,0,0,1-2,2.82635V54a3.00328,3.00328,0,0,1-3,3H7a3.00328,3.00328,0,0,1-3-3V32.18286a2.99032,2.99032,0,0,1-2-2.82641V19a3.00328,3.00328,0,0,1,3-3H21.05615A9.01271,9.01271,0,0,1,30,8h4a9.01235,9.01235,0,0,1,8.94385,8H59A3.00328,3.00328,0,0,1,62,19ZM23.07129,16h2.0293A5.00854,5.00854,0,0,1,30,12h4a5.00854,5.00854,0,0,1,4.89941,4h2.0293A7.01058,7.01058,0,0,0,34,10H30A7.011,7.011,0,0,0,23.07129,16ZM34,14H30a2.99123,2.99123,0,0,0-2.811,2H36.811A2.99123,2.99123,0,0,0,34,14ZM58,54V32.57068L37,36.16V38a5,5,0,0,1-10,0V36.16L6,32.5708V54a1.0013,1.0013,0,0,0,1,1H57A1.001,1.001,0,0,0,58,54ZM32,41a3.00328,3.00328,0,0,0,3-3V33a1.001,1.001,0,0,0-1-1H30a1.0013,1.0013,0,0,0-1,1v5A3.00328,3.00328,0,0,0,32,41ZM60,19a1.001,1.001,0,0,0-1-1H5a1.0013,1.0013,0,0,0-1,1V29.165a1.06833,1.06833,0,0,0,.83154,1.17676L27,34.13074V33a3.00328,3.00328,0,0,1,3-3h4a3.00328,3.00328,0,0,1,3,3v1.13074L59.168,30.3418A1.06815,1.06815,0,0,0,60,29.165Z"/></svg>
+            </span>
+            Projects
+          </div>
+          <div class="sb-item stub">
+            <span class="sb-icon">
+              <svg viewBox="0 0 60 60"><path d="M57.549,48.753a6.049,6.049,0,0,1-1.995-1.473,6.268,6.268,0,0,0-9.671,0,4.316,4.316,0,0,1-6.9,0,6.271,6.271,0,0,0-9.675,0,4.317,4.317,0,0,1-6.9,0,6.272,6.272,0,0,0-9.676,0A4.484,4.484,0,0,1,9.29,49a3.844,3.844,0,0,1-2.7-1.027,4,4,0,0,0-4.314-.607A3.892,3.892,0,0,0,0,50.938V57a3,3,0,0,0,3,3H57a3,3,0,0,0,3-3V52.412A3.913,3.913,0,0,0,57.549,48.753ZM58,57a1,1,0,0,1-1,1H3a1,1,0,0,1-1-1V50.938a1.886,1.886,0,0,1,1.112-1.756A2.021,2.021,0,0,1,5.29,49.5a5.818,5.818,0,0,0,4,1.5,6.38,6.38,0,0,0,4.84-2.28,4.318,4.318,0,0,1,6.9,0,6.271,6.271,0,0,0,9.674,0,4.318,4.318,0,0,1,6.9,0,6.267,6.267,0,0,0,9.671,0,4.315,4.315,0,0,1,6.893,0,7.912,7.912,0,0,0,2.668,1.9A1.9,1.9,0,0,1,58,52.412Z"/><path d="M57,0H3A3,3,0,0,0,0,3V9.062a3.892,3.892,0,0,0,2.273,3.572,4,4,0,0,0,4.314-.607A3.844,3.844,0,0,1,9.29,11a4.484,4.484,0,0,1,3.451,1.72,6.272,6.272,0,0,0,9.676,0,4.317,4.317,0,0,1,6.9,0,6.271,6.271,0,0,0,9.675,0,4.316,4.316,0,0,1,6.9,0,6.268,6.268,0,0,0,9.671,0,6.049,6.049,0,0,1,1.995-1.473A3.913,3.913,0,0,0,60,7.588V3A3,3,0,0,0,57,0Zm1,7.588A1.9,1.9,0,0,1,56.832,9.38a7.912,7.912,0,0,0-2.668,1.9,4.315,4.315,0,0,1-6.893,0,6.267,6.267,0,0,0-9.671,0,4.318,4.318,0,0,1-6.9,0,6.271,6.271,0,0,0-9.674,0,4.318,4.318,0,0,1-6.9,0A6.38,6.38,0,0,0,9.29,9a5.818,5.818,0,0,0-4,1.5,2.02,2.02,0,0,1-2.178.314A1.886,1.886,0,0,1,2,9.062V3A1,1,0,0,1,3,2H57a1,1,0,0,1,1,1Z"/><path d="M47.419,17.546a2.039,2.039,0,0,0-2.2-.37A2,2,0,0,0,44,19.03V22H3a3,3,0,0,0-3,3V35a3,3,0,0,0,3,3H44v2.97a2,2,0,0,0,1.215,1.854,2.039,2.039,0,0,0,2.2-.368L59.344,31.488a2.016,2.016,0,0,0,0-2.974ZM58,30.01l0,0L46,40.97V37a1,1,0,0,0-1-1H3a1,1,0,0,1-1-1V25a1,1,0,0,1,1-1H45a1,1,0,0,0,1-1l.063-3.983L58,30.009Z"/></svg>
+            </span>
+            Events
+            <span class="sb-stub-tag">stub</span>
+          </div>
+        </div>
+        <div class="sidebar-demo-caption">
+          <p>Real icons from <code>~/sources/icons/correlator/</code> (Sump, Projects) and the general <code>~/sources/icons/</code> stock (Events) — not placeholders. Data-stream management folds under Sump; Events ships empty until it's redesigned.</p>
+        </div>
+      </div>
+
+      <ul>
+        <li><strong>Sump</strong> — evolves the Gateway section (new/edit/uninstall, secure storage). Data-stream management (today's separate "Docker Host" section) folds in here, consistent with §8.1's containment rule that a sump <em>contains</em> its data streams. <em>(Inferred from the containment model, not an explicit instruction — flag if wrong.)</em></li>
+        <li><strong>Projects</strong> — evolves the Analysis section (Load Data/Opened Data), reshaped around <code>*.correlator</code> projects (§8.3).</li>
+        <li><strong>Events</strong> — kept as a section, but its contents are being <strong>redesigned from scratch</strong>, not ported from Events Capture's current behavior. Ships as an empty stub for now.</li>
+      </ul>
+
+      <p><strong>Icon assets are reused, not commissioned</strong>, in order of preference:</p>
+      <div class="icon-strip">
+        <span class="swatch"><span class="ico"><svg viewBox="0 0 64 64"><path d="m 17.5,33.421378 h -2 v 2 h 2 z"/><path d="m 17.5,41.421378 h -2 v 2 h 2 z"/><path d="m 11.5,19.421378 c 6.17,0 11,2.64 11,6 v 16 c 0,3.36 -4.83,6 -11,6 -6.17,0 -11,-2.64 -11,-6 v -16 c 0,-3.36 4.83,-6 11,-6 z m -9,22 c 0,1.89 3.7,4 9,4 5.3,0 9,-2.11 9,-4 v -4.52 c -1.97,1.53 -5.23,2.52 -9,2.52 -3.77,0 -7.03,-0.99 -9,-2.52 z m 0,-8 c 0,1.89 3.7,4 9,4 5.3,0 9,-2.11 9,-4 v -4.52 c -1.97,1.53 -5.23,2.52 -9,2.52 -3.77,0 -7.03,-0.99 -9,-2.52 z m 9,-4 c 5.3,0 9,-2.11 9,-4 0,-1.89 -3.7,-4 -9,-4 -5.3,0 -9,2.11 -9,4 0,1.89 3.7,4 9,4 z"/></svg></span>sump.svg</span>
+        <span class="swatch"><span class="ico"><svg viewBox="0 0 64 64"><path d="M32,38a1.5,1.5,0,1,1,1.5-1.5A1.5,1.5,0,0,1,32,38Zm-6,7a8,8,0,1,1-8-8A8.00917,8.00917,0,0,1,26,45Zm-7-5.90967V44h4.90967A6.0055,6.0055,0,0,0,19,39.09033ZM12,45a5.96461,5.96461,0,0,0,.455,2.28638L17,44.44574V39.09033A6.00448,6.00448,0,0,0,12,45Zm11.90967,1H18.2868L13.521,48.97864A5.98568,5.98568,0,0,0,23.90967,46ZM54,44H40a1,1,0,0,0,0,2H54a1,1,0,0,0,0-2Zm0-4H40a1,1,0,0,0,0,2H54a1,1,0,0,0,0-2Zm0,8H40a1,1,0,0,0,0,2H54a1,1,0,0,0,0-2Zm8-29V29.35645a2.98967,2.98967,0,0,1-2,2.82635V54a3.00328,3.00328,0,0,1-3,3H7a3.00328,3.00328,0,0,1-3-3V32.18286a2.99032,2.99032,0,0,1-2-2.82641V19a3.00328,3.00328,0,0,1,3-3H21.05615A9.01271,9.01271,0,0,1,30,8h4a9.01235,9.01235,0,0,1,8.94385,8H59A3.00328,3.00328,0,0,1,62,19Z"/></svg></span>project.svg</span>
+        <span class="swatch"><span class="ico"><svg viewBox="0 0 511.999 511.999"><path d="M403.889,203.213c-3.668-5.783-10.04-9.287-16.889-9.287H276V20c0-9.363-6.496-17.472-15.633-19.516c-9.142-2.043-18.47,2.524-22.46,10.994l-131,278.071c-2.919,6.195-2.465,13.453,1.204,19.236c3.668,5.783,10.04,9.287,16.889,9.287h111v173.925c0,9.363,6.496,17.473,15.633,19.518c9.199,2.054,18.494-2.577,22.46-10.995l131-278.071C408.012,216.254,407.558,208.996,403.889,203.213z M276,402.615V298.072c0-11.046-8.954-20-20-20h-99.47L236,109.383v104.543c0,11.046,8.954,20,20,20h99.47L276,402.615z"/></svg></span>stream.svg / data-stream.svg</span>
+        <span class="swatch"><span class="ico"><svg viewBox="0 0 60 60"><path d="M57.549,48.753a6.049,6.049,0,0,1-1.995-1.473,6.268,6.268,0,0,0-9.671,0,4.316,4.316,0,0,1-6.9,0,6.271,6.271,0,0,0-9.675,0,4.317,4.317,0,0,1-6.9,0,6.272,6.272,0,0,0-9.676,0A4.484,4.484,0,0,1,9.29,49a3.844,3.844,0,0,1-2.7-1.027,4,4,0,0,0-4.314-.607A3.892,3.892,0,0,0,0,50.938V57a3,3,0,0,0,3,3H57a3,3,0,0,0,3-3V52.412A3.913,3.913,0,0,0,57.549,48.753Z"/></svg></span>events.svg</span>
+      </div>
+      <ol>
+        <li><strong><code>~/sources/icons/correlator/</code></strong> — already built for the new vocabulary: <code>sump.svg</code>, <code>project.svg</code>, <code>data-stream.svg</code>, <code>track.svg</code>, <code>recordind.svg</code> (recording — filename typo to fix on use), <code>stream.svg</code>. Use these first.</li>
+        <li><strong><code>~/sources/icons/</code></strong> (general stock) — everything else: <code>events.svg</code>, connectivity/transport icons, <code>gateway.svg</code>/<code>cttc-gateway*.svg</code> for reference.</li>
+        <li><strong>cttc's own asset set</strong> — <code>app/renderer/assets/sidebar/{sources,preferences,metrics}.svg</code> plus the inline icons already in <code>action-bar.js</code>/<code>index.html</code> (edit-pencil, trash/uninstall, create-plus) — reusable directly where the action's meaning is unchanged by the rename.</li>
+      </ol>
+      <div class="callout"><p>cttc's own "Create Event" button icon and <code>stream.svg</code>/<code>correlator/stream.svg</code> are <strong>the same SVG asset</strong> — a bolt/swoosh glyph doing double duty for "event trigger" and "stream." The existing stock was already curated with this vocabulary overlap in mind, not two unrelated sets to reconcile by hand.</p></div>
+    </section>
+
+    <section id="s10">
+      <div class="sect-head"><span class="n">10</span><h2>Testing &amp; CI strategy</h2></div>
+      <ul>
+        <li>App: <strong>Vitest</strong>, replacing the Node built-in test runner; keep an Electron E2E harness equivalent to <code>run-e2e.sh</code>'s approach.</li>
+        <li>Server: pytest + pytest-asyncio + fakeredis, continuing log-sump's own pattern; add OpenTelemetry-aware integration tests once instrumentation lands (Phase 1).</li>
+        <li><strong>CI</strong>: cttc has none beyond a manual Docker-push workflow. Standing up automated test-on-push CI for both app and server is explicit Phase 0 work — the port is the right moment to fix this, not a later cleanup pass.</li>
+        <li><strong>Sump lifecycle: state-transition coverage, held to a higher bar than feature coverage elsewhere</strong> (§5.5). Every edge of the <code>provisioning → active ⇄ unreachable → retired</code> / <code>active ⇄ sleeping</code> state machine gets its own test, plus a named regression test per historical cttc Gateway/Docker-host/daemon bug — the one area of the port explicitly exempted from "test what the feature needs" in favor of "test the failure modes that already happened once."</li>
+      </ul>
+    </section>
+
+    <section id="s11">
+      <div class="sect-head"><span class="n">11</span><h2>Phased roadmap</h2></div>
+      <div class="phaseflow">
+        <div class="phase">
+          <div class="badge">00</div>
+          <div class="phase-card">
+            <h4>Foundations</h4>
+            <dl>
+              <dt>Goal</dt><dd>Toolchains + CI stood up for both app and server; naming locked.</dd>
+              <dt>Deliverables</dt><dd>esbuild/TS/Vitest/Biome app scaffold; uv/ruff/ty/pytest server scaffold (§4.4); Python/Redis/Fluent Bit/OTel server scaffold; CI on push for both.</dd>
+              <dt>Net-new</dt><dd class="new">CI (cttc has none), Biome (cttc has no JS/TS linter today)</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="badge">01</div>
+          <div class="phase-card">
+            <h4>Sump server core</h4>
+            <dl>
+              <dt>Goal</dt><dd>Server skeleton with the new ingestion pipeline.</dd>
+              <dt>Deliverables</dt><dd>Fluent Bit swap-in (or adapter, per §4.2 spike); OpenTelemetry instrumentation; pytest/pluggy-style plugin manager + hookspecs (§5.4), entry-point discovery, no plugins registered yet.</dd>
+              <dt>Builds on</dt><dd>log-sump's 4-process shape, Redis-Streams schema, <code>Transport</code> ABC.</dd>
+              <dt>Net-new</dt><dd class="new">Fluent Bit output path, OTel instrumentation, the plugin manager itself</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="badge">02</div>
+          <div class="phase-card">
+            <h4>Provisioning + catalog</h4>
+            <dl>
+              <dt>Goal</dt><dd>Sump install flow + local metadata store, built to the stability bar in §5.5.</dd>
+              <dt>Deliverables</dt><dd>Docker-detect/local-or-SSH-provision flow; <code>.correlator/</code> JSON+SQLite catalog; unified auth token; explicit Sump lifecycle state machine with state-transition test coverage; cttc's 19 Gateway/Docker-host/daemon bugs ported to a regression corpus.</dd>
+              <dt>Net-new</dt><dd class="new">SQLite-backed catalog schema, the state machine itself</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="badge">03</div>
+          <div class="phase-card">
+            <h4>Data-stream SSH plugin</h4>
+            <dl>
+              <dt>Goal</dt><dd>First data-stream plugin, self-host detection.</dd>
+              <dt>Deliverables</dt><dd>Ported <code>SSHTransport</code>/<code>LocalTransport</code>, packaged as an installable entry-point plugin implementing <code>register_transport</code> + <code>register_data_source</code> (§5.4); self-filter w/ opt-in self-watch.</dd>
+              <dt>Net-new</dt><dd class="new">First real plugin package proving out the Phase 1 manager</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="badge">04</div>
+          <div class="phase-card">
+            <h4>App shell parity</h4>
+            <dl>
+              <dt>Goal</dt><dd>Electron+React+TS+Jotai+esbuild scaffold wired to the new Sump API.</dd>
+              <dt>Deliverables</dt><dd>Window/dialog shell, IPC bridge, esbuild watch-mode HMR loop.</dd>
+              <dt>Net-new</dt><dd class="new">Full React rewrite of the shell</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="badge">05</div>
+          <div class="phase-card">
+            <h4>Core correlation UX parity</h4>
+            <dl>
+              <dt>Goal</dt><dd>The non-negotiable UX (§2) working end-to-end.</dd>
+              <dt>Deliverables</dt><dd>Charts, shared timeline, event-density lanes, virtual-scrolled log panels, bidirectional click-correlate.</dd>
+              <dt>Net-new</dt><dd class="new">React/Jotai implementation</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="badge">06</div>
+          <div class="phase-card">
+            <h4>Recording/track/project data model</h4>
+            <dl>
+              <dt>Goal</dt><dd>File formats + <code>.correlator</code> projects.</dd>
+              <dt>Deliverables</dt><dd><code>.recording</code>/<code>.track</code> renamed archive format, default project, virtual folders, file-association open handlers.</dd>
+              <dt>Net-new</dt><dd class="new">Project file format, virtual folders, OS file-association</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="badge">07</div>
+          <div class="phase-card">
+            <h4>Data-stream logstream plugin</h4>
+            <dl>
+              <dt>Goal</dt><dd>Second data-stream plugin.</dd>
+              <dt>Deliverables</dt><dd>Upstream <code>log-sump</code> survey (blocking, §6.4) → stdout/stderr adapter design → implementation.</dd>
+              <dt>Net-new</dt><dd class="new">Output-sink abstraction (confirmed absent everywhere today)</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="badge">08</div>
+          <div class="phase-card">
+            <h4>Secondary-Sump federation</h4>
+            <dl>
+              <dt>Goal</dt><dd>Mesh/promotion + per-user privacy.</dd>
+              <dt>Deliverables</dt><dd>Promotion flow, shared-auth reuse (§5.3), per-user data-stream catalog + privacy flag.</dd>
+              <dt>Net-new</dt><dd class="new">Per-user identity layer (open question, §7.3/§12)</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="phase">
+          <div class="badge">09</div>
+          <div class="phase-card">
+            <h4>Packaging/distribution parity</h4>
+            <dl>
+              <dt>Goal</dt><dd>Installers + release pipeline.</dd>
+              <dt>Deliverables</dt><dd>electron-builder installers (NSIS/DMG/AppImage), Sump image publishing.</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="phase exploratory">
+          <div class="badge">10</div>
+          <div class="phase-card">
+            <h4>Kibana-oriented plugin <span style="font-weight:400;color:var(--ink-faint);font-size:0.8em;">— exploratory</span></h4>
+            <dl>
+              <dt>Goal</dt><dd>Validate the plugin interface against a non-container source.</dd>
+              <dt>Deliverables</dt><dd>Design spike only, no committed implementation date.</dd>
+              <dt>Net-new</dt><dd class="new">Kibana/Elasticsearch data-stream plugin</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+      <p style="font-size:0.9rem;color:var(--ink-soft);"><strong>Sequencing note:</strong> Phases 1–3 (server-side) and Phase 4 (app shell) can run in parallel once Phase 0 is done, since the app shell doesn't need the real Sump API to build its scaffold against a mock. Phase 5 should not start until both tracks have a real, if minimal, integration point.</p>
+    </section>
+
+    <section id="s12">
+      <div class="sect-head"><span class="n">12</span><h2>Risks &amp; open questions</h2></div>
+      <ol>
+        <li><strong>Per-user identity for Sump auth</strong> (§5.3, §7.3) — blocking for Phase 8, worth resolving as early as Phase 2 so the catalog schema doesn't need a breaking migration later.</li>
+        <li><strong><code>log-sump</code> upstream survey</strong> (§6.4) — blocking for Phase 7 design; should happen well before Phase 7 starts.</li>
+        <li><strong>Fluentd → Fluent Bit feasibility</strong> (§4.2) — needs a short spike in Phase 1 before committing to one approach.</li>
+        <li><strong>Embedded vs. shared Redis</strong> — cttc bundles Redis in-container; worth an explicit Phase 1 decision, relevant once secondary Sumps and multi-user catalogs exist.</li>
+        <li><strong>Sleep-mode scope</strong> (§5.4) — read as "the functionality the failed plugin backs goes idle," not "the whole Sump process sleeps." Confirm before Phase 1 implements <code>on_health_check()</code> — the blast radius differs a lot between the two readings.</li>
+        <li><strong>Kibana plugin shape</strong> — deliberately undecided; tracked only as a constraint on the Phase 3/6.3 plugin interface.</li>
+      </ol>
+    </section>
+
+    <section id="s13">
+      <div class="sect-head"><span class="n">13</span><h2>Traceability</h2></div>
+      <p>This roadmap is the detailed content behind <code>FEAT-0001-cttc-port-electron-react-python-sump</code> in the catalyst deployment (<code>.catalyst-proj/</code>). Per <code>CODE-OF-CONDUCT.md</code> §1, no phase above starts as real development work without first opening a <code>REQ-NNNN</code> against it (never a <code>BUG-</code>), vetted against <code>rules/Rules-of-Rules.md</code> §1 and assigned a domain — most likely new domains under the <code>core</code> rule document (e.g. <code>CORE.SUMP</code>, <code>CORE.DATASTREAM</code>, <code>CORE.PROJECT</code>) rather than folding everything into the existing single <code>CORE</code> domain, given the scope here.</p>
+    </section>
+
+    <footer>
+      <p>correlator · docs/roadmap/cttc-to-correlator-port.md · this page mirrors that file for reading; the markdown source is canonical and version-controlled.</p>
+    </footer>
+  </main>
+</div>
+
+<script>
+  (function () {
+    var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+    var sections = links.map(function (a) {
+      return document.querySelector(a.getAttribute('href'));
+    });
+    if (!('IntersectionObserver' in window)) return;
+    var current = null;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        var idx = sections.indexOf(entry.target);
+        if (idx === -1) return;
+        if (current) current.classList.remove('active');
+        current = links[idx];
+        current.classList.add('active');
+      });
+    }, { rootMargin: '-10% 0px -75% 0px', threshold: 0 });
+    sections.forEach(function (s) { if (s) io.observe(s); });
+  })();
+</script>
