@@ -4,10 +4,19 @@ import fakeredis.aioredis
 import httpx
 
 from correlator_sump.app import create_app
+from correlator_sump.plugins import PluginManager
 
 
 async def test_health_reports_ok_and_loaded_plugins() -> None:
-    app = create_app(redis_client=fakeredis.aioredis.FakeRedis(), ingest_port=0)
+    # An explicit, empty PluginManager -- this test is about the /health
+    # endpoint's shape, not about which plugins happen to be installed in
+    # this dev environment (sump-plugin-ssh is a dev dependency here, for
+    # test_integration_ssh_plugin.py's own purposes).
+    app = create_app(
+        redis_client=fakeredis.aioredis.FakeRedis(),
+        plugin_manager=PluginManager(disabled=["ssh"]),
+        ingest_port=0,
+    )
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:

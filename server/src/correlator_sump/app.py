@@ -25,7 +25,7 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        plugin_manager.discover()
+        await plugin_manager.discover()
         server = await run_ingest_server(adapter, port=ingest_port)
         async with server:
             yield

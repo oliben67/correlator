@@ -1,36 +1,34 @@
 [project]
-name = "correlator-sump"
-version = "0.2.0"
-description = "correlator's Sump: containerized telemetry/log correlation server"
+name = "sump-plugin-ssh"
+version = "0.1.0"
+description = "correlator Sump plugin: SSH/local data-stream transport (cor-CORE.DATASTREAM-002)"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi>=0.141.1",
-    "opentelemetry-api>=1.44.0",
-    "opentelemetry-exporter-otlp-proto-http>=1.44.0",
-    "opentelemetry-sdk>=1.44.0",
-    "pluggy>=1.6.0",
-    "redis>=5.0",
-    "uvicorn[standard]>=0.52.4",
+    "correlator-sump",
+    "paramiko>=3.5",
 ]
+
+[project.entry-points."sump.plugins"]
+ssh = "sump_plugin_ssh.plugin:plugin"
 
 [dependency-groups]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
-    "httpx>=0.27",
-    "fakeredis>=2.26",
     "ruff>=0.7",
     "ty>=0.0.71",
-    "sump-plugin-ssh",
 ]
+
+[tool.uv.sources]
+correlator-sump = { path = "../server", editable = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/correlator_sump"]
+packages = ["src/sump_plugin_ssh"]
 
 [tool.ruff]
 line-length = 100
@@ -46,6 +44,3 @@ addopts = ["--import-mode=importlib"]
 
 [tool.ty.environment]
 python-version = "3.12"
-
-[tool.uv.sources]
-sump-plugin-ssh = { path = "../sump-plugin-ssh", editable = true }
