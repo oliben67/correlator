@@ -17,7 +17,7 @@ Input: $ARGUMENTS
    anything — removing it would break a live `FEAT-`/`REQ-`
    cross-reference. Instead add a `Retired` field (today's date) to the
    file, mark its `roadmaps.md` entry `retired`, leave every row and
-   `RM-NNNN` ID exactly as they are, and tell the user it was retired
+   `RM-NNNNNN` ID exactly as they are, and tell the user it was retired
    rather than removed, and why.
 5. Append a journal entry per `CODE-OF-CONDUCT.md` §9 /
    `rules/Rules-of-Rules.md` §12 (`action: "retire"` if retired, `"close"`

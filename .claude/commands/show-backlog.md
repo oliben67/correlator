@@ -8,9 +8,9 @@ spec: `.catalyst-proj/CODE-OF-CONDUCT.md` §2/§3, catalyst framework
 `INVARIANTS.md` INV-14.
 Input: $ARGUMENTS
 
-1. Read every index: `development/bugs.md`, `requirements/requirements.md`,
-   `features/features.md`, `development/house-keeping.md`,
-   `work-items/{epics,stories,tasks,spikes,sprints}.md`, and every
+1. Read every index: `development/bugs/bugs.md`, `requirements/requirements.md`,
+   `features/features.md`, `development/house-keeping/house-keeping.md`,
+   `work-items/{epics,stories,tasks,spikes,sprints}/{same-name}.md`, and every
    `development/roadmaps/<name>.md` not marked `Retired`.
 2. Compute: open bugs by severity, in-progress/proposed requirements,
    any story with no linked `REQ-`/`BUG-` doc (a rules-of-work-items §1
@@ -24,7 +24,7 @@ Input: $ARGUMENTS
    (grouped by roadmap name then Status) — plus a refreshed
    `**Last refreshed:**` timestamp).
 4. **Also refresh every active `development/roadmaps/<name>.md` in
-   place**: for each `RM-NNNN` row, resolve whichever `FEAT-`/`REQ-` its
+   place**: for each `RM-NNNNNN` row, resolve whichever `FEAT-`/`REQ-` its
    `Linked` field names (if any) and set `Status` to `Not triaged` /
    `Triaged` / `In progress` / `Done` accordingly, leaving
    `Title`/`Notes`/`Source` untouched. No file write in steps 3–4 is

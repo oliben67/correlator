@@ -6,7 +6,7 @@ argument-hint: <name>
 Deactivate a user. Full spec: `.catalyst-proj/CODE-OF-CONDUCT.md` §2/§4.
 Input: $ARGUMENTS
 
-1. If `<name>` has no entry in `.catalyst-proj/development/users.json`,
+1. If `<name>` has no entry in `.catalyst-proj/IAM/users/users.json`,
    refuse with a clear message.
 2. If `<name>` is the only entry with `"active": true`, warn that this
    would leave the project with zero active users (hard rule, INV-16) and
@@ -16,7 +16,7 @@ Input: $ARGUMENTS
    artifacts must stay resolvable.
 4. Append a journal entry per `CODE-OF-CONDUCT.md` §9 /
    `rules/Rules-of-Rules.md` §12 (`action: "update"`, `targets: []`,
-   `files` = `development/users.json` with real `git hash-object -w`
+   `files` = `IAM/users/users.json` with real `git hash-object -w`
    before/after hashes).
 5. Report the result. Do not commit or push — leave changes unstaged
    unless the user asks otherwise.

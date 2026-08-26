@@ -8,11 +8,11 @@ List catalyst items of the requested type. Full spec:
 Input: $ARGUMENTS
 
 1. Resolve `<type>` to its index file:
-   - `bug` → `.catalyst-proj/development/bugs.md`
+   - `bug` → `.catalyst-proj/development/bugs/bugs.md`
    - `req`/`requirement` → `.catalyst-proj/requirements/requirements.md`
    - `feature` → `.catalyst-proj/features/features.md`
-   - `hk`/`house-keeping` → `.catalyst-proj/development/house-keeping.md`
-   - `meta-tag` → `.catalyst-proj/development/meta-tags.md`
+   - `hk`/`house-keeping` → `.catalyst-proj/development/house-keeping/house-keeping.md`
+   - `meta-tag` → `.catalyst-proj/development/meta-tags/meta-tags.md`
    - `epic`/`story`/`task`/`spike`/`sprint` →
      `.catalyst-proj/work-items/<type>s.md`
    - `rule` → `.catalyst-proj/rules/rules.md`

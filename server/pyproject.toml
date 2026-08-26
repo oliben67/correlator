@@ -1,9 +1,17 @@
 [project]
 name = "correlator-sump"
-version = "0.1.0"
+version = "0.2.0"
 description = "correlator's Sump: containerized telemetry/log correlation server"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi>=0.141.1",
+    "opentelemetry-api>=1.44.0",
+    "opentelemetry-exporter-otlp-proto-http>=1.44.0",
+    "opentelemetry-sdk>=1.44.0",
+    "pluggy>=1.6.0",
+    "redis>=5.0",
+    "uvicorn[standard]>=0.52.4",
+]
 
 [dependency-groups]
 dev = [

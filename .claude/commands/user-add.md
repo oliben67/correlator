@@ -1,5 +1,5 @@
 ---
-description: Register a new user in .catalyst-proj/development/users.json with an initial role
+description: Register a new user in .catalyst-proj/IAM/users/users.json with an initial role
 argument-hint: <name> <role>
 ---
 
@@ -8,17 +8,17 @@ Input: $ARGUMENTS
 
 1. Parse `$ARGUMENTS` as `<name> <role>`. If either is missing, ask for it.
 2. If `<name>` already has an entry in
-   `.catalyst-proj/development/users.json`, refuse and point to
+   `.catalyst-proj/IAM/users/users.json`, refuse and point to
    `/user-modify`/`/user-assign-role` instead.
 3. If `<role>` isn't one of the roles listed in
-   `.catalyst-proj/development/roles.json`, ask whether to use an
+   `.catalyst-proj/IAM/roles/roles.json`, ask whether to use an
    existing role or run `/role-add` for `<role>` first.
 4. Append a new object to the `users` array:
    `{"name": "<name>", "roles": ["<role>"], "registered": "<today>",
    "active": true, "notes": ""}`.
 5. Append a journal entry per `CODE-OF-CONDUCT.md` §9 /
    `rules/Rules-of-Rules.md` §12 (`action: "create"`, `targets: []`,
-   `files` = `development/users.json` with real `git hash-object -w`
+   `files` = `IAM/users/users.json` with real `git hash-object -w`
    before/after hashes).
 6. Report the result. If this is the project's first registered user,
    note that the hard "at least one active user" requirement (INV-16) is

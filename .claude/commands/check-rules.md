@@ -10,8 +10,9 @@ Input: $ARGUMENTS
 
 1. If `scripts/check_deployment.py` from the catalyst framework repository
    is available this session, run it against `.catalyst-proj/` first — it
-   mechanically checks INV-7 (naming), INV-8 (single `TEMPLATE-RULE.md`,
-   no orphan rules, required headings). If it isn't available, do the
+   mechanically checks INV-7 (naming), INV-8 (`TEMPLATE-RULE*.md` lives
+   in `rules/templates/`, no orphan rules, required headings), and INV-20
+   (uniform artifact-type layout). If it isn't available, do the
    equivalent checks by hand.
 2. Beyond what the script covers, check by inspection:
    - Every rule ID referenced in a dev artifact's `Targets` field actually

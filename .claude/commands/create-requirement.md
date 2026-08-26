@@ -1,6 +1,6 @@
 ---
-description: Alias of /create-req — create a new catalyst REQ-NNNN artifact
-argument-hint: <short description of the requirement> [--targets rule-id,...] [--domain CODE] [--feature FEAT-NNNN]
+description: Alias of /create-req — create a new catalyst REQ-NNNNNN artifact
+argument-hint: <short description of the requirement> [--targets rule-id,...] [--domain CODE] [--feature FEAT-NNNNNN]
 ---
 
 This is an alias of `/create-req` (`CODE-OF-CONDUCT.md` §3 lists both

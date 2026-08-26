@@ -15,7 +15,7 @@ Input: $ARGUMENTS
 4. For each item: if it matches an existing row by title/description
    similarity, update that row's `Title`/`Notes` (ask the user rather
    than guessing when a match is ambiguous); if it's new, add a row with
-   the next global `RM-NNNN` ID (`Status: Not triaged`, `Linked: *(none)*`).
+   the next global `RM-NNNNNN` ID (`Status: Not triaged`, `Linked: *(none)*`).
 5. Flag — in `Notes`, never by deleting — any existing row whose item no
    longer appears in `<file>`.
 6. Update the file's `Source` and `Last updated` fields.

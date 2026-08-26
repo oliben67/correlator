@@ -8,7 +8,7 @@ Input: $ARGUMENTS
 
 1. Parse `$ARGUMENTS` as `<name> <field> <value>`. If any part is missing,
    ask for it.
-2. If `<name>` has no entry in `.catalyst-proj/development/users.json`,
+2. If `<name>` has no entry in `.catalyst-proj/IAM/users/users.json`,
    refuse and point to `/user-add`.
 3. Refuse if `<field>` is `roles` — point to `/user-assign-role` instead.
 4. Refuse if `<field>` is `name` or `registered` — identity/audit fields,
@@ -19,7 +19,7 @@ Input: $ARGUMENTS
 6. Otherwise update `<field>` to `<value>`.
 7. Append a journal entry per `CODE-OF-CONDUCT.md` §9 /
    `rules/Rules-of-Rules.md` §12 (`action: "update"`, `targets: []`,
-   `files` = `development/users.json` with real `git hash-object -w`
+   `files` = `IAM/users/users.json` with real `git hash-object -w`
    before/after hashes).
 8. Report the result. Do not commit or push — leave changes unstaged
    unless the user asks otherwise.

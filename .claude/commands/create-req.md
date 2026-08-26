@@ -1,18 +1,18 @@
 ---
-description: Create a new catalyst REQ-NNNN artifact and register it in requirements/requirements.md
-argument-hint: <short description of the requirement> [--targets rule-id,...] [--domain CODE] [--feature FEAT-NNNN]
+description: Create a new catalyst REQ-NNNNNN artifact and register it in requirements/requirements.md
+argument-hint: <short description of the requirement> [--targets rule-id,...] [--domain CODE] [--feature FEAT-NNNNNN]
 ---
 
 Create a new catalyst requirement artifact. Full spec:
 `.catalyst-proj/CODE-OF-CONDUCT.md` §2/§3, template:
-`.catalyst-proj/requirements/TEMPLATE-REQUIREMENT.md`.
+`.catalyst-proj/requirements/templates/TEMPLATE-REQUIREMENT-v1.md`.
 Input: $ARGUMENTS
 
 This is the artifact to open when **new** product behavior needs to be
 built — never a `/create-bug` for that.
 
 1. Read `.catalyst-proj/requirements/requirements.md` and list
-   `.catalyst-proj/requirements/` to find the highest existing `REQ-NNNN`
+   `.catalyst-proj/requirements/` to find the highest existing `REQ-NNNNNN`
    (4-digit, zero-padded). The new ID is the next number.
 2. **Vet against every existing rule document** first
    (`.catalyst-proj/rules/Rules-of-Rules.md` §1 — currently just
@@ -28,13 +28,13 @@ built — never a `/create-bug` for that.
    free text. If a new domain is needed, follow `Rules-of-Rules.md` §7
    before writing the requirement.
 5. Copy the template to
-   `.catalyst-proj/requirements/REQ-NNNN-<short-kebab-summary>.md`
+   `.catalyst-proj/requirements/REQ-NNNNNN-<short-kebab-summary>.md`
    (descriptive filename, not the bare ID) and fill in every section:
    Vetted-against-existing-rules, New domain/rules proposed (if any),
    Source rules, Signed-off-by (resolve per `CODE-OF-CONDUCT.md` §2),
    Summary, Functional requirements with acceptance criteria, Business
    rules, Non-functional requirements, Design/implementation plan, Test
-   plan, Open questions, Related. If a `--feature FEAT-NNNN` was given,
+   plan, Open questions, Related. If a `--feature FEAT-NNNNNN` was given,
    set the `Feature` field and add this REQ to that feature's
    `Requirement(s)` field.
 6. Add a row to `.catalyst-proj/requirements/requirements.md`.
