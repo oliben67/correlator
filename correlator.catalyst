@@ -1,0 +1,13 @@
+{
+  "project_name": "correlator",
+  "framework_version": "0.12.1",
+  "agent": "claude-code",
+  "agent-source": "/Users/oliviersteck/.claude/projects/-Users-oliviersteck-sources-correlator/catalyst-proj",
+  "repoed": true,
+  "catalyst_repo": "correlator-catalyst-proj",
+  "catalyst_repo_url": "git@github.com:oliben67/correlator-catalyst-proj.git",
+  "created_by": "olivier-steck",
+  "thingamabob_branch": "olivier-steck.catalyst-proj",
+  "created": "2026-08-23",
+  "updated": "2026-08-26"
+}
