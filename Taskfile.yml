@@ -4,6 +4,16 @@
 # ...) come from Taskfile.common.yml (deployed from
 # development-framework/templates/Taskfile.common.template.yml — refreshed
 # by /sync-framework, not hand-edited here).
+#
+# Everything below mirrors cttc's own root Taskfile.yml shape (combined
+# install/check/ci/typecheck/clean tasks delegating to each sub-project's
+# own Taskfile via `includes:`) adapted to correlator's actual layout:
+# four sub-projects (app/ npm; server/, sump-plugin-ssh/,
+# sump-plugin-logstream/ all uv), not cttc's single `app/`.
+# log-sump-container/ is deliberately not included here — it's a
+# legacy compat-shim project (a separate git checkout, per
+# env-LAYOUT-001's own Notes), not part of the actively-developed
+# roadmap or of .github/workflows/ci.yml's own coverage.
 
 version: "3"
 
@@ -11,7 +21,111 @@ includes:
   common:
     taskfile: ./Taskfile.common.yml
     flatten: true
+  app:
+    taskfile: ./app/Taskfile.yml
+    dir: ./app
+  server:
+    taskfile: ./server/Taskfile.yml
+    dir: ./server
+  sump-plugin-ssh:
+    taskfile: ./sump-plugin-ssh/Taskfile.yml
+    dir: ./sump-plugin-ssh
+  sump-plugin-logstream:
+    taskfile: ./sump-plugin-logstream/Taskfile.yml
+    dir: ./sump-plugin-logstream
 
 tasks:
-  # Add this project's own operational tasks here (install/lint/test/build/...
-  # across app/, server/, log-sump-container/, sump-plugin-ssh/).
+  default:
+    desc: List all available tasks
+    silent: true
+    cmd: task --list
+
+  # ── Combined workflows ────────────────────────────────────────────────────
+  install:
+    desc: Install dependencies for every sub-project
+    cmds:
+      - task: app:install
+      - task: server:install
+      - task: sump-plugin-ssh:install
+      - task: sump-plugin-logstream:install
+
+  check:
+    desc: Lint + typecheck every sub-project (no tests — see task test/ci)
+    cmds:
+      - task: app:check
+      - task: server:check
+
+  test:
+    desc: Run every sub-project's test suite (broader than ci — also covers the two plugin packages standalone)
+    cmds:
+      - task: app:test
+      - task: server:test
+      - task: sump-plugin-ssh:test
+      - task: sump-plugin-logstream:test
+
+  ci:
+    desc: Full CI pipeline for app/ and server/ — matches .github/workflows/ci.yml exactly (its two jobs run in parallel there; sequential here)
+    cmds:
+      - task: app:ci
+      - task: server:ci
+
+  typecheck:
+    desc: Type-check every sub-project
+    cmds:
+      - task: app:typecheck
+      - task: server:typecheck
+      - task: sump-plugin-ssh:typecheck
+      - task: sump-plugin-logstream:typecheck
+
+  # ── Development ───────────────────────────────────────────────────────────
+  start:
+    desc: Launch the app (does not provision or start a Sump automatically — see server:start / server:docker:up)
+    cmds:
+      - task: app:start
+
+  # ── Packaging / release (cor-CORE.PACKAGING-001/-002/-003) ───────────────
+  package:
+    desc: Build this platform's electron-builder installer, unsigned
+    cmds:
+      - task: app:package
+
+  docker:build:
+    desc: Build the Sump's container image locally (no push)
+    cmds:
+      - task: server:docker:build
+
+  docker:up:
+    desc: Bring up sump+redis+fluent-bit via docker compose
+    cmds:
+      - task: server:docker:up
+
+  docker:down:
+    desc: Tear down the docker compose stack
+    cmds:
+      - task: server:docker:down
+
+  release:dispatch:
+    desc: >-
+      Trigger .github/workflows/release.yml for real (GHCR image push +
+      installer matrix) via gh workflow run — never invoked by this
+      Taskfile itself, ONLY on your own explicit request; see
+      REQ-000011's Open questions for why this has never actually been
+      run yet.   [usage: task release:dispatch -- --ref development]
+    cmd: gh workflow run release.yml {{.CLI_ARGS}}
+
+  # ── Clean ─────────────────────────────────────────────────────────────────
+  clean:
+    desc: Remove build artefacts and caches across all sub-projects
+    cmds:
+      - task: app:clean
+      - task: server:clean
+      - task: sump-plugin-ssh:clean
+      - task: sump-plugin-logstream:clean
+
+  clean:all:
+    desc: Remove everything including node_modules/.venv across all sub-projects
+    cmds:
+      - task: app:clean:all
+      - task: server:clean:all
+      - task: sump-plugin-ssh:clean:all
+      - task: sump-plugin-logstream:clean:all

@@ -1,0 +1,71 @@
+# https://taskfile.dev — requires Task ≥ 3.28
+#
+# The SSH/local data-stream plugin (cor-CORE.DATASTREAM-002) — an
+# installable sump.plugins entry-point package, not a standalone
+# service, so no start task (see server/Taskfile.yml for that). Not
+# currently run standalone in .github/workflows/ci.yml — server/'s own
+# test_integration_ssh_plugin.py exercises it via real entry-point
+# discovery instead — so this package's own `task test` here is broader
+# coverage than CI runs, not a duplicate of it.
+
+version: "3"
+
+vars:
+  UV: env -u VIRTUAL_ENV uv
+
+tasks:
+  default:
+    desc: List all available tasks
+    silent: true
+    cmd: task --list
+
+  install:
+    desc: Install dependencies (uv) — includes an editable path dependency on ../server
+    cmd: "{{.UV}} sync --all-extras --dev"
+
+  test:
+    desc: Run the pytest suite
+    cmd: "{{.UV}} run pytest"
+
+  typecheck:
+    desc: Type-check with ty
+    cmd: "{{.UV}} run ty check"
+
+  lint:
+    desc: Ruff check
+    cmd: "{{.UV}} run ruff check ."
+
+  format:
+    desc: Ruff format --write
+    cmd: "{{.UV}} run ruff format ."
+
+  check:
+    desc: Lint + typecheck
+    cmds:
+      - task: lint
+      - task: typecheck
+
+  ci:
+    desc: install → lint → typecheck → test
+    cmds:
+      - task: install
+      - task: lint
+      - task: typecheck
+      - task: test
+
+  clean:
+    desc: Remove caches and __pycache__
+    silent: true
+    cmd: |
+      rm -rf .pytest_cache .ruff_cache
+      find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+      printf '\033[32m✓ Clean\033[0m\n'
+
+  clean:all:
+    desc: Remove everything including .venv (run task install to restore)
+    cmds:
+      - task: clean
+      - cmd: rm -rf .venv/
+        silent: true
+      - cmd: printf '\033[32m✓ Fully clean\033[0m\n'
+        silent: true

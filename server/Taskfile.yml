@@ -1,0 +1,105 @@
+# https://taskfile.dev — requires Task ≥ 3.28
+#
+# Mirrors cttc's own app/Taskfile.yml shape, adapted to the Sump's uv/
+# pytest/ruff/ty toolchain (env-RUNTIME-001) instead of npm, plus the
+# Dockerfile/docker-compose.yml deployment unit built in Phase 9
+# (cor-CORE.PACKAGING-001).
+
+version: "3"
+
+vars:
+  # Strip any active venv from another uv project (e.g. running a task
+  # here right after one in sump-plugin-ssh/) so uv always resolves this
+  # project's own .venv — the exact "VIRTUAL_ENV does not match" warning
+  # this guards against was hit for real running these projects' test
+  # suites back-to-back in one shell this session.
+  UV: env -u VIRTUAL_ENV uv
+
+tasks:
+  default:
+    desc: List all available tasks
+    silent: true
+    cmd: task --list
+
+  # ── Setup ─────────────────────────────────────────────────────────────────
+  install:
+    desc: Install server dependencies, including the sump-plugin-ssh/logstream dev deps (uv)
+    cmd: "{{.UV}} sync --all-extras --dev"
+
+  # ── Development ───────────────────────────────────────────────────────────
+  start:
+    desc: Run the Sump server locally (uvicorn, reload on change)
+    interactive: true
+    cmd: "{{.UV}} run uvicorn correlator_sump.app:create_app --factory --reload --port 8765"
+
+  # ── Tests ─────────────────────────────────────────────────────────────────
+  test:
+    desc: Run the pytest suite (fakeredis-backed, no real Redis needed)
+    cmd: "{{.UV}} run pytest"
+
+  # ── Type checking / lint ──────────────────────────────────────────────────
+  typecheck:
+    desc: Type-check with ty
+    cmd: "{{.UV}} run ty check"
+
+  lint:
+    desc: Ruff check
+    cmd: "{{.UV}} run ruff check ."
+
+  format:
+    desc: Ruff format --write
+    cmd: "{{.UV}} run ruff format ."
+
+  format:check:
+    desc: Ruff format --check (no changes written — what CI would run)
+    cmd: "{{.UV}} run ruff format --check ."
+
+  # ── Quality gates ─────────────────────────────────────────────────────────
+  check:
+    desc: Lint + typecheck (matches ci.yml's server job, minus the test step)
+    cmds:
+      - task: lint
+      - task: typecheck
+
+  ci:
+    desc: Full CI pipeline for server/ — install → lint → typecheck → test (matches .github/workflows/ci.yml's server job exactly)
+    cmds:
+      - task: install
+      - task: lint
+      - task: typecheck
+      - task: test
+
+  # ── Container image / compose (cor-CORE.PACKAGING-001) ───────────────────
+  docker:build:
+    desc: "Build the Sump's container image locally (no push)   [usage: task docker:build -- -t correlator-sump:dev]"
+    cmd: docker build -f Dockerfile -t correlator-sump:latest . {{.CLI_ARGS}}
+
+  docker:up:
+    desc: Bring up sump+redis+fluent-bit via docker compose (builds the sump image first)
+    cmd: docker compose up -d --build
+
+  docker:down:
+    desc: Tear down the docker compose stack
+    cmd: docker compose down
+
+  docker:logs:
+    desc: "Follow the compose stack's logs   [usage: task docker:logs -- sump]"
+    cmd: docker compose logs -f {{.CLI_ARGS}}
+
+  # ── Clean ─────────────────────────────────────────────────────────────────
+  clean:
+    desc: Remove caches (pytest/ruff) and __pycache__
+    silent: true
+    cmd: |
+      rm -rf .pytest_cache .ruff_cache
+      find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+      printf '\033[32m✓ Clean\033[0m\n'
+
+  clean:all:
+    desc: Remove everything including .venv (run task install to restore)
+    cmds:
+      - task: clean
+      - cmd: rm -rf .venv/
+        silent: true
+      - cmd: printf '\033[32m✓ Fully clean\033[0m\n'
+        silent: true

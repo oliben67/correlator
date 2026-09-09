@@ -1,0 +1,95 @@
+# https://taskfile.dev — requires Task ≥ 3.28
+#
+# Mirrors cttc's own app/Taskfile.yml shape (install/start/test/check/ci/
+# clean), adapted to correlator's actual scripts (npm run typecheck/lint/
+# format/test/package, not cttc's node --check + npm run typecheck split).
+
+version: "3"
+
+vars:
+  # VSCode's/Claude Code's extension host exports ELECTRON_RUN_AS_NODE,
+  # which turns the Electron binary into plain Node — strip it so a real
+  # window can launch (cor-CORE.SHELL-001; confirmed necessary the hard
+  # way running this app manually in this same environment).
+  ELECTRON: env -u ELECTRON_RUN_AS_NODE npx electron
+
+tasks:
+  default:
+    desc: List all available tasks
+    silent: true
+    cmd: task --list
+
+  # ── Setup ─────────────────────────────────────────────────────────────────
+  install:
+    desc: Install app dependencies (npm)
+    cmd: npm ci
+
+  # ── Development ───────────────────────────────────────────────────────────
+  start:
+    desc: Build the renderer, then launch the app
+    cmds:
+      - task: build:renderer
+      - "{{.ELECTRON}} ."
+
+  build:renderer:
+    desc: Build the esbuild renderer bundle once
+    cmd: npm run build:renderer
+
+  watch:renderer:
+    desc: Rebuild the renderer bundle on every source change (Ctrl+C to stop)
+    interactive: true
+    cmd: npm run watch:renderer
+
+  package:
+    desc: "Build the renderer, then produce this platform's electron-builder installer (cor-CORE.PACKAGING-002)"
+    cmd: npm run package
+
+  # ── Tests ─────────────────────────────────────────────────────────────────
+  test:
+    desc: Run the Vitest suite (renderer/src, lib, build, tests)
+    cmd: npm test
+
+  # ── Type checking / lint ──────────────────────────────────────────────────
+  typecheck:
+    desc: Type-check every tsconfig project (renderer/src, lib, tests, build)
+    cmd: npm run typecheck
+
+  lint:
+    desc: Biome check
+    cmd: npm run lint
+
+  format:
+    desc: Biome format --write
+    cmd: npm run format
+
+  # ── Quality gates ─────────────────────────────────────────────────────────
+  check:
+    desc: Lint + typecheck (matches ci.yml's app job, minus the test step)
+    cmds:
+      - task: lint
+      - task: typecheck
+
+  ci:
+    desc: Full CI pipeline for app/ — install → lint → typecheck → test (matches .github/workflows/ci.yml's app job exactly)
+    cmds:
+      - task: install
+      - task: lint
+      - task: typecheck
+      - task: test
+
+  # ── Clean ─────────────────────────────────────────────────────────────────
+  clean:
+    desc: Remove build/packaging output and caches
+    silent: true
+    cmd: |
+      rm -rf renderer/dist dist
+      printf '\033[32m✓ Clean\033[0m\n'
+
+  clean:all:
+    desc: Remove everything including node_modules (run task install to restore)
+    cmds:
+      - task: clean
+      - cmd: rm -rf node_modules/
+        silent: true
+      - cmd: printf '\033[32m✓ Fully clean\033[0m\n'
+        silent: true
