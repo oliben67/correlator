@@ -4,7 +4,7 @@ argument-hint: (no arguments)
 ---
 
 Run the catalyst analysis playbook. Full spec:
-`.catalyst-proj/CODE-OF-CONDUCT.md` §3.
+`.criterion/CODE-OF-CONDUCT.md` §3.
 Input: $ARGUMENTS
 
 1. `ANALYSIS-PLAYBOOK.md` lives in the catalyst framework's own repository

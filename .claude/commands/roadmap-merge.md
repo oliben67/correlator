@@ -4,12 +4,12 @@ argument-hint: <name> <update-file>
 ---
 
 Merge a partial delta into a named roadmap. Full spec:
-`.catalyst-proj/CODE-OF-CONDUCT.md` §4.
+`.criterion/CODE-OF-CONDUCT.md` §4.
 Input: $ARGUMENTS
 
 1. Parse `$ARGUMENTS` as `<name> <update file>`. If either is missing, ask
    for it.
-2. If `.catalyst-proj/development/roadmaps/<name>.md` doesn't exist,
+2. If `.criterion/development/roadmaps/<name>.md` doesn't exist,
    refuse and point to `/roadmap-add` instead.
 3. Read `<update file>` as a **partial delta**, not the full roadmap:
    identify only the items it actually contains.

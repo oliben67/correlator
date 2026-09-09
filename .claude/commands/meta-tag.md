@@ -4,8 +4,8 @@ argument-hint: <artefact-id> --key comment|version|link-to --value "..."
 ---
 
 Create a new catalyst meta-tag artifact. Full spec:
-`.catalyst-proj/CODE-OF-CONDUCT.md` §2/§3, template:
-`.catalyst-proj/development/meta-tags/templates/TEMPLATE-META-TAG-v1.md`.
+`.criterion/CODE-OF-CONDUCT.md` §2/§3, template:
+`.criterion/development/meta-tags/templates/TEMPLATE-META-TAG-v1.md`.
 Input: $ARGUMENTS
 
 A meta-tag is a lightweight annotation — one key/value pair on an existing
@@ -19,10 +19,10 @@ artifact. It does not define a rule or work item on its own.
    the key (`comment`: free string; `version`: number; `link-to`: another
    artefact ID that must also resolve).
 3. Copy the template to
-   `.catalyst-proj/development/meta-tags/tag-<key>-<artefact-id>.md`
+   `.criterion/development/meta-tags/tag-<key>-<artefact-id>.md`
    (the storage name is fixed by this pattern — not a sequential ID) and
    fill in Stored as, Target artifact, Key, Value type, Value.
-4. Add a row to `.catalyst-proj/development/meta-tags/meta-tags.md`.
+4. Add a row to `.criterion/development/meta-tags/meta-tags.md`.
 5. Append a journal entry per `CODE-OF-CONDUCT.md` §9 /
    `rules/Rules-of-Rules.md` §12 (`action: "create"`, `targets: []`,
    `files` = every file just touched with real `git hash-object -w`

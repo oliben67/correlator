@@ -4,7 +4,7 @@ Correlate container telemetry (CPU / memory / network) with service logs.
 ## Development
 
 Two components, each with its own toolchain (governed by
-[`.catalyst-proj/rules/env/env-rules.md`](.catalyst-proj/rules/env/env-rules.md)):
+[`.criterion/rules/env/env-rules.md`](.criterion/rules/env/env-rules.md)):
 
 - **`server/`** — the Sump server (Python 3.12, [uv](https://docs.astral.sh/uv/)):
   ```

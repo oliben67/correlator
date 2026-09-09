@@ -1,15 +1,15 @@
 ---
-description: Add a new role to .catalyst-proj/IAM/roles/roles.json
+description: Add a new role to .criterion/IAM/roles/roles.json
 argument-hint: <role> <actions>
 ---
 
-Add a new role. Full spec: `.catalyst-proj/CODE-OF-CONDUCT.md` §2/§4.
+Add a new role. Full spec: `.criterion/CODE-OF-CONDUCT.md` §2/§4.
 Input: $ARGUMENTS
 
 1. Parse `$ARGUMENTS` as `<role> <actions>`. If either is missing, ask for
    it.
 2. If `<role>` already has an entry in
-   `.catalyst-proj/IAM/roles/roles.json`, refuse and point to
+   `.criterion/IAM/roles/roles.json`, refuse and point to
    `/role-modify` instead.
 3. Append a new object `{"name": "<role>", "actions": <actions>}` to the
    `roles` array.

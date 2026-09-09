@@ -4,11 +4,11 @@ argument-hint: <name> <file>
 ---
 
 Re-ingest a named roadmap's source file. Full spec:
-`.catalyst-proj/CODE-OF-CONDUCT.md` §4.
+`.criterion/CODE-OF-CONDUCT.md` §4.
 Input: $ARGUMENTS
 
 1. Parse `$ARGUMENTS` as `<name> <file>`. If either is missing, ask for it.
-2. If `.catalyst-proj/development/roadmaps/<name>.md` doesn't exist,
+2. If `.criterion/development/roadmaps/<name>.md` doesn't exist,
    refuse and point to `/roadmap-add` instead.
 3. Read `<file>` and identify its distinct items, the same way
    `/roadmap-add` would.

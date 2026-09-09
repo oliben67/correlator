@@ -1,0 +1,17 @@
+# correlator's own operations.
+#
+# Catalyst-operation dispatch tasks (create-bug, check-rules, sync-framework,
+# ...) come from Taskfile.common.yml (deployed from
+# development-framework/templates/Taskfile.common.template.yml — refreshed
+# by /sync-framework, not hand-edited here).
+
+version: "3"
+
+includes:
+  common:
+    taskfile: ./Taskfile.common.yml
+    flatten: true
+
+tasks:
+  # Add this project's own operational tasks here (install/lint/test/build/...
+  # across app/, server/, log-sump-container/, sump-plugin-ssh/).

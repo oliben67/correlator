@@ -4,19 +4,21 @@ argument-hint: (no arguments)
 ---
 
 Summarize the catalyst backlog and refresh the persisted snapshot. Full
-spec: `.catalyst-proj/CODE-OF-CONDUCT.md` §2/§3, catalyst framework
+spec: `.criterion/CODE-OF-CONDUCT.md` §2/§3, catalyst framework
 `INVARIANTS.md` INV-14.
 Input: $ARGUMENTS
 
 1. Read every index: `development/bugs/bugs.md`, `requirements/requirements.md`,
    `features/features.md`, `development/house-keeping/house-keeping.md`,
-   `work-items/{epics,stories,tasks,spikes,sprints}/{same-name}.md`, and every
-   `development/roadmaps/<name>.md` not marked `Retired`.
+   `reconciliations/reconciliations.md`, every `development/roadmaps/<name>.md`
+   not marked `Retired`, and `work-items/{epics,stories,tasks,spikes,sprints}/{same-name}.md`
+   if a project-management plugin has deployed `work-items/` (`rules/Rules-of-Rules.md`
+   §8/§17) — skip that source entirely otherwise, not an error.
 2. Compute: open bugs by severity, in-progress/proposed requirements,
-   any story with no linked `REQ-`/`BUG-` doc (a rules-of-work-items §1
-   violation), any `⚠️`/`❌` rules with no open work targeting them,
-   feature ideas with no requirement opened yet, and every active
-   roadmap's rows grouped by roadmap name then Status.
+   any open reconciliation case, any story with no linked `REQ-`/`BUG-`
+   doc when `work-items/` is deployed, any `⚠️`/`❌` rules with no open
+   work targeting them, feature ideas with no requirement opened yet, and
+   every active roadmap's rows grouped by roadmap name then Status.
 3. **Overwrite `development/BACKLOG.md` in full** with the result (same
    sections as `development/BACKLOG.md`'s existing structure — Open bugs,
    In-progress/proposed requirements, Work items missing links, Rules with

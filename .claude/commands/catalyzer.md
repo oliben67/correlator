@@ -3,8 +3,8 @@ description: Manage catalyst plugin installation and activation (list, activate,
 argument-hint: list | activate <name> <version|latest> | download <name> <version|latest> | deactivate <name> | upgrade <name|latest> | downgrade <name> <version>
 ---
 
-Manage catalyst plugins. Full spec: `.catalyst-proj/CODE-OF-CONDUCT.md` §3,
-hard rules: `.catalyst-proj/rules/Rules-of-Rules.md` INV-10/11/12/13 (a
+Manage catalyst plugins. Full spec: `.criterion/CODE-OF-CONDUCT.md` §3,
+hard rules: `.criterion/rules/Rules-of-Rules.md` INV-10/11/12/13 (a
 plugin is never loaded unless activated here; every plugin has its own
 repository and is never sourced from the catalyst framework repository
 itself; a plugin's runtime target is this deployed project, never the

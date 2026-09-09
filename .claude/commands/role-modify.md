@@ -1,14 +1,14 @@
 ---
-description: Replace an existing role's actions in .catalyst-proj/IAM/roles/roles.json
+description: Replace an existing role's actions in .criterion/IAM/roles/roles.json
 argument-hint: <role> <actions>
 ---
 
-Replace a role's actions. Full spec: `.catalyst-proj/CODE-OF-CONDUCT.md` §2/§4.
+Replace a role's actions. Full spec: `.criterion/CODE-OF-CONDUCT.md` §2/§4.
 Input: $ARGUMENTS
 
 1. Parse `$ARGUMENTS` as `<role> <actions>`. If either is missing, ask for
    it.
-2. If `<role>` has no entry in `.catalyst-proj/IAM/roles/roles.json`,
+2. If `<role>` has no entry in `.criterion/IAM/roles/roles.json`,
    refuse and point to `/role-add` instead.
 3. Replace that entry's `actions` array with `<actions>`.
 4. Report the result — and note that this never retroactively changes a

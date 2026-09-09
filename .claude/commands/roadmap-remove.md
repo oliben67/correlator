@@ -3,15 +3,15 @@ description: Delete or retire a named roadmap
 argument-hint: <name>
 ---
 
-Remove a named roadmap. Full spec: `.catalyst-proj/CODE-OF-CONDUCT.md` §4,
+Remove a named roadmap. Full spec: `.criterion/CODE-OF-CONDUCT.md` §4,
 `rules/Rules-of-Rules.md` §10.
 Input: $ARGUMENTS
 
-1. If `.catalyst-proj/development/roadmaps/<name>.md` doesn't exist,
+1. If `.criterion/development/roadmaps/<name>.md` doesn't exist,
    refuse with a clear message.
 2. Check every row's `Linked` field.
 3. **If every row's `Linked` field is empty**: delete the file and its
-   entry in `.catalyst-proj/development/roadmaps/roadmaps.md` outright,
+   entry in `.criterion/development/roadmaps/roadmaps.md` outright,
    and report that it was removed.
 4. **If any row has a non-empty `Linked` field**: do **not** delete
    anything — removing it would break a live `FEAT-`/`REQ-`

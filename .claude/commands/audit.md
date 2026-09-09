@@ -4,7 +4,7 @@ argument-hint: <file-name>
 ---
 
 Analyze the change-impact of a file. Full spec:
-`.catalyst-proj/CODE-OF-CONDUCT.md` §3.
+`.criterion/CODE-OF-CONDUCT.md` §3.
 Input: $ARGUMENTS
 
 1. Resolve `<file-name>` in the repository. If it can't be found, report
@@ -14,9 +14,9 @@ Input: $ARGUMENTS
    asset.
 3. Inspect what depends on it or references it: for a rule, its domain
    file, its entries in local + global indexes, and any dev artifacts that
-   target it (`grep` its ID across `development/`, `requirements/`,
-   `work-items/`); for application source, its importers/callers and any
-   tests exercising it.
+   target it (`grep` its ID across `development/`, `requirements/`, and
+   `work-items/` if a project-management plugin has deployed it); for
+   application source, its importers/callers and any tests exercising it.
 4. Return a concise summary: what the file is, what would be affected by
    changing it, and any blocking concerns (e.g. it's targeted by open
    work, or it's a template with no corresponding index entry).

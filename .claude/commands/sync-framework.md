@@ -4,7 +4,7 @@ argument-hint: [latest|<version>] [--force <type>|<item-id>|all]
 ---
 
 Synchronize the deployed catalyst framework. Full spec:
-`.catalyst-proj/CODE-OF-CONDUCT.md` §3, `.catalyst-proj/version.txt` for
+`.criterion/CODE-OF-CONDUCT.md` §3, `.criterion/version.txt` for
 the currently installed version.
 Input: $ARGUMENTS
 
@@ -31,7 +31,7 @@ Input: $ARGUMENTS
    plugin directory as overwritable template content — only merge new
    rows / refresh pinned columns into an existing `catalog.md`, never
    delete a row or a plugin's installed contents.
-5. Update `.catalyst-proj/version.txt` to the resolved target version once
+5. Update `.criterion/version.txt` to the resolved target version once
    synchronized.
 6. Perform a four-eyes verification pass: review the refreshed deployment
    against the framework's `INSTANTIATION-GUIDE.md` and rules once

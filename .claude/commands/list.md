@@ -1,22 +1,25 @@
 ---
 description: List catalyst artifacts, work items, rules, or templates, optionally filtered
-argument-hint: bug|req|feature|hk|meta-tag|epic|story|task|spike|sprint|rule|domain|template|all [--filter key=value ...]
+argument-hint: bug|req|feature|hk|meta-tag|reconciliation|epic|story|task|spike|sprint|rule|domain|template|all [--filter key=value ...]
 ---
 
 List catalyst items of the requested type. Full spec:
-`.catalyst-proj/CODE-OF-CONDUCT.md` §3.
+`.criterion/CODE-OF-CONDUCT.md` §3.
 Input: $ARGUMENTS
 
 1. Resolve `<type>` to its index file:
-   - `bug` → `.catalyst-proj/development/bugs/bugs.md`
-   - `req`/`requirement` → `.catalyst-proj/requirements/requirements.md`
-   - `feature` → `.catalyst-proj/features/features.md`
-   - `hk`/`house-keeping` → `.catalyst-proj/development/house-keeping/house-keeping.md`
-   - `meta-tag` → `.catalyst-proj/development/meta-tags/meta-tags.md`
-   - `epic`/`story`/`task`/`spike`/`sprint` →
-     `.catalyst-proj/work-items/<type>s.md`
-   - `rule` → `.catalyst-proj/rules/rules.md`
-   - `domain` → `.catalyst-proj/rules/domains/domains.md`
+   - `bug` → `.criterion/development/bugs/bugs.md`
+   - `req`/`requirement` → `.criterion/requirements/requirements.md`
+   - `feature` → `.criterion/features/features.md`
+   - `hk`/`house-keeping` → `.criterion/development/house-keeping/house-keeping.md`
+   - `meta-tag` → `.criterion/development/meta-tags/meta-tags.md`
+   - `reconciliation` → `.criterion/reconciliations/reconciliations.md`
+   - `epic`/`story`/`task`/`spike`/`sprint` — only if a
+     project-management plugin has deployed `work-items/` (`rules/Rules-of-Rules.md`
+     §8/§17); if it hasn't, say so rather than inventing an index. When
+     deployed: `.criterion/work-items/<type>s/<type>s.md`
+   - `rule` → `.criterion/rules/rules.md`
+   - `domain` → `.criterion/rules/domains/domains.md`
    - `template` → **requires** an additional `--type <template-type>`
      argument identifying which template family (e.g. `--type bug`); if
      missing, ask for it rather than guessing.

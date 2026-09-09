@@ -3,10 +3,10 @@ description: Deactivate a registered user (never deletes their entry)
 argument-hint: <name>
 ---
 
-Deactivate a user. Full spec: `.catalyst-proj/CODE-OF-CONDUCT.md` §2/§4.
+Deactivate a user. Full spec: `.criterion/CODE-OF-CONDUCT.md` §2/§4.
 Input: $ARGUMENTS
 
-1. If `<name>` has no entry in `.catalyst-proj/IAM/users/users.json`,
+1. If `<name>` has no entry in `.criterion/IAM/users/users.json`,
    refuse with a clear message.
 2. If `<name>` is the only entry with `"active": true`, warn that this
    would leave the project with zero active users (hard rule, INV-16) and

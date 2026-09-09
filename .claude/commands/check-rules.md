@@ -4,12 +4,12 @@ argument-hint: (no arguments)
 ---
 
 Verify catalyst rule/domain/artifact consistency. Full spec:
-`.catalyst-proj/CODE-OF-CONDUCT.md` §3, invariants:
-`.catalyst-proj/rules/Rules-of-Rules.md` (especially INV-7/INV-8).
+`.criterion/CODE-OF-CONDUCT.md` §3, invariants:
+`.criterion/rules/Rules-of-Rules.md` (especially INV-7/INV-8).
 Input: $ARGUMENTS
 
 1. If `scripts/check_deployment.py` from the catalyst framework repository
-   is available this session, run it against `.catalyst-proj/` first — it
+   is available this session, run it against `.criterion/` first — it
    mechanically checks INV-7 (naming), INV-8 (`TEMPLATE-RULE*.md` lives
    in `rules/templates/`, no orphan rules, required headings), and INV-20
    (uniform artifact-type layout). If it isn't available, do the
@@ -19,9 +19,10 @@ Input: $ARGUMENTS
      exists.
    - Every `Domain` field value exists in `rules/domains/domains.md`.
    - No two rules in the same domain reuse an `NNN`.
-   - Every `STORY-`/`TASK-` traces back to a real `REQ-`/`BUG-` doc
-     (`work-items/rules-of-work-items.md` §1), and no task has its own
-     independent rule target (§2).
+   - If a project-management-type plugin is active and has deployed
+     `work-items/` (`rules/Rules-of-Rules.md` §8/§17): every `STORY-`/
+     `TASK-` traces back to a real `REQ-`/`BUG-` doc, and no task has its
+     own independent rule target.
 3. Report findings as a list of concrete issues (file + what's wrong), or
    confirm everything checks out. Don't silently fix anything found —
    report it so the user decides.

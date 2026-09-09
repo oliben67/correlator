@@ -4,13 +4,15 @@ argument-hint: <artefact-id> <status> [force]
 ---
 
 Update an artifact/work-item's `Status` field. Full spec:
-`.catalyst-proj/CODE-OF-CONDUCT.md` §3.
+`.criterion/CODE-OF-CONDUCT.md` §3.
 Input: $ARGUMENTS
 
 1. Resolve `<artefact-id>` to its file (search
-   `.catalyst-proj/{development,requirements,features,work-items}/**`).
-   If it doesn't resolve, state plainly that the artifact cannot be found
-   — do not guess or create it.
+   `.criterion/{development,requirements,features,reconciliations}/**`,
+   plus `.criterion/work-items/**` if a project-management plugin has
+   deployed it — `rules/Rules-of-Rules.md` §8/§17). If it doesn't
+   resolve, state plainly that the artifact cannot be found — do not
+   guess or create it.
 2. Look up that artifact type's valid `Status` values (each template's
    `| **Status** |` row documents its own valid set, e.g. bugs:
    open/in-progress/fixed/wontfix/duplicate-of; requirements:

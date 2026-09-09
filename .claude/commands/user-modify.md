@@ -3,12 +3,12 @@ description: Edit a registered user's notes (or reactivate them)
 argument-hint: <name> <field> <value>
 ---
 
-Edit a user's field. Full spec: `.catalyst-proj/CODE-OF-CONDUCT.md` §2/§4.
+Edit a user's field. Full spec: `.criterion/CODE-OF-CONDUCT.md` §2/§4.
 Input: $ARGUMENTS
 
 1. Parse `$ARGUMENTS` as `<name> <field> <value>`. If any part is missing,
    ask for it.
-2. If `<name>` has no entry in `.catalyst-proj/IAM/users/users.json`,
+2. If `<name>` has no entry in `.criterion/IAM/users/users.json`,
    refuse and point to `/user-add`.
 3. Refuse if `<field>` is `roles` — point to `/user-assign-role` instead.
 4. Refuse if `<field>` is `name` or `registered` — identity/audit fields,

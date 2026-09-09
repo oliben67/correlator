@@ -3,13 +3,13 @@ description: Filter and report development/journal.jsonl entries (read-only)
 argument-hint: [--since <date>] [--artifact <id>] [--actor <name>] [--rule <id>]
 ---
 
-Report journal entries. Full spec: `.catalyst-proj/CODE-OF-CONDUCT.md` §9,
-`.catalyst-proj/rules/Rules-of-Rules.md` §12.
+Report journal entries. Full spec: `.criterion/CODE-OF-CONDUCT.md` §9,
+`.criterion/rules/Rules-of-Rules.md` §12.
 Input: $ARGUMENTS
 
 This command is **read-only** — it never writes to the journal itself.
 
-1. Read `.catalyst-proj/development/journal.jsonl` (one JSON object per
+1. Read `.criterion/development/journal.jsonl` (one JSON object per
    line). If it doesn't exist or is empty, say so rather than inventing
    history.
 2. Apply whichever filters were given: `--since` on `timestamp`,

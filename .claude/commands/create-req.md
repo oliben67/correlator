@@ -4,18 +4,18 @@ argument-hint: <short description of the requirement> [--targets rule-id,...] [-
 ---
 
 Create a new catalyst requirement artifact. Full spec:
-`.catalyst-proj/CODE-OF-CONDUCT.md` §2/§3, template:
-`.catalyst-proj/requirements/templates/TEMPLATE-REQUIREMENT-v1.md`.
+`.criterion/CODE-OF-CONDUCT.md` §2/§3, template:
+`.criterion/requirements/templates/TEMPLATE-REQUIREMENT-v1.md`.
 Input: $ARGUMENTS
 
 This is the artifact to open when **new** product behavior needs to be
 built — never a `/create-bug` for that.
 
-1. Read `.catalyst-proj/requirements/requirements.md` and list
-   `.catalyst-proj/requirements/` to find the highest existing `REQ-NNNNNN`
+1. Read `.criterion/requirements/requirements.md` and list
+   `.criterion/requirements/` to find the highest existing `REQ-NNNNNN`
    (4-digit, zero-padded). The new ID is the next number.
 2. **Vet against every existing rule document** first
-   (`.catalyst-proj/rules/Rules-of-Rules.md` §1 — currently just
+   (`.criterion/rules/Rules-of-Rules.md` §1 — currently just
    `rules/core/core-rules.md`), not just the seemingly-relevant part. Record
    the outcome: no conflict found, or which existing rule ID(s) this
    narrows/amends.
@@ -24,11 +24,11 @@ built — never a `/create-bug` for that.
    rule(s) first (per `rules/Rules-of-Rules.md` §3/§7 — ID scheme, domain)
    and list them under "New rules proposed" in the requirement doc instead
    — **never** leave `Targets` empty (`CODE-OF-CONDUCT.md` §1).
-4. Resolve `Domain` from `.catalyst-proj/rules/domains/domains.md` — never
+4. Resolve `Domain` from `.criterion/rules/domains/domains.md` — never
    free text. If a new domain is needed, follow `Rules-of-Rules.md` §7
    before writing the requirement.
 5. Copy the template to
-   `.catalyst-proj/requirements/REQ-NNNNNN-<short-kebab-summary>.md`
+   `.criterion/requirements/REQ-NNNNNN-<short-kebab-summary>.md`
    (descriptive filename, not the bare ID) and fill in every section:
    Vetted-against-existing-rules, New domain/rules proposed (if any),
    Source rules, Signed-off-by (resolve per `CODE-OF-CONDUCT.md` §2),
@@ -37,7 +37,7 @@ built — never a `/create-bug` for that.
    plan, Open questions, Related. If a `--feature FEAT-NNNNNN` was given,
    set the `Feature` field and add this REQ to that feature's
    `Requirement(s)` field.
-6. Add a row to `.catalyst-proj/requirements/requirements.md`.
+6. Add a row to `.criterion/requirements/requirements.md`.
 7. Append a journal entry per `CODE-OF-CONDUCT.md` §9 /
    `rules/Rules-of-Rules.md` §12 (`action: "create"`, `targets` = the
    Targets field, `files` = every file just touched with real

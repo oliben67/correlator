@@ -3,7 +3,7 @@ description: List catalyst's slash commands, or show detailed help for one
 argument-hint: [command-name]
 ---
 
-Show catalyst help. Full spec: `.catalyst-proj/CODE-OF-CONDUCT.md` §3.
+Show catalyst help. Full spec: `.criterion/CODE-OF-CONDUCT.md` §3.
 Input: $ARGUMENTS
 
 - **No argument**: run `/commands list` for the command listing rather

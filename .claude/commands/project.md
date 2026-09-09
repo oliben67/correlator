@@ -4,8 +4,8 @@ argument-hint: create <project name> | remove <project name> [force] | export <p
 ---
 
 Manage this project's catalyst deployment lifecycle. Full spec:
-`.catalyst-proj/CODE-OF-CONDUCT.md` §4, mechanism:
-`.catalyst-proj/rules/Rules-of-Rules.md` §14.
+`.criterion/CODE-OF-CONDUCT.md` §4, mechanism:
+`.criterion/rules/Rules-of-Rules.md` §14.
 Input: $ARGUMENTS
 
 **`remove ... force` and `import ... force` are destructive and
@@ -17,7 +17,7 @@ though invoking this command already implies intent.**
 
 **`create <project name>`:**
 2. Refuses if a `<app-name>.catalyst` pointer or an in-project
-   `.catalyst-proj/` already exists at this project's root — that's
+   `.criterion/` already exists at this project's root — that's
    `import ... force`'s job, not this one's.
 3. Resolve `agent-source` (`BOOTSTRAP.md` §1): agent-owned per-project
    storage if this agent has one, else the in-project fallback.
@@ -30,17 +30,17 @@ though invoking this command already implies intent.**
 
 **`remove <project name> [force]`:**
 7. Without `force`: delete this project's `<app-name>.catalyst` only
-   (and, on the in-project fallback, stop treating that `.catalyst-proj/`
+   (and, on the in-project fallback, stop treating that `.criterion/`
    as active). The working copy, this agent's memory note, and any
-   `thingamabob` repo are left untouched — never delete, retire in place.
+   `criterion` repo are left untouched — never delete, retire in place.
 8. With `force`: confirm explicitly first, then additionally delete the
    working copy at `agent-source` and this agent's memory note for the
-   project. Never deletes a `thingamabob` repo regardless.
+   project. Never deletes a `criterion` repo regardless.
 
 **`export <project name> [export filename]`:**
 9. Resolve `agent-source` for `<project name>`.
 10. Read every file under its working copy into one JSON bundle, keyed
-    by path relative to `.catalyst-proj/`, plus the pointer fields from
+    by path relative to `.criterion/`, plus the pointer fields from
     `<app-name>.catalyst` (all but `agent-source` — meaningless outside
     this machine).
 11. Write it to `<export filename>` if given, else
@@ -50,7 +50,7 @@ though invoking this command already implies intent.**
 
 **`import <export filename> [force]`:**
 13. Without `force`: refuses if a `<app-name>.catalyst` pointer or an
-    in-project `.catalyst-proj/` already exists at the current project's
+    in-project `.criterion/` already exists at the current project's
     root.
 14. With `force` (or when nothing exists yet): confirm explicitly what
     will be overwritten if this replaces an existing deployment, then:
@@ -62,6 +62,6 @@ though invoking this command already implies intent.**
     journal entry (`action: "import"`).
 15. Report the result.
 
-Not a replacement for `/thingamabob get` (that joins an already-repoed
+Not a replacement for `/criterion get` (that joins an already-repoed
 deployment's shared history via its dedicated repo; this installs from a
 standalone export file with no repo involved).
