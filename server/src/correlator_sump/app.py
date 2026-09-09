@@ -3,15 +3,23 @@ manager together into one Sump process (REQ-000003, Phase 1 skeleton)."""
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 
 import redis.asyncio as redis
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Response
 
+from correlator_sump.exports import (
+    VALID_METRIC_FIELDS,
+    build_recording_archive,
+    build_track_archive,
+)
 from correlator_sump.ingest import STREAM_KEY, IngestAdapter, run_ingest_server
 from correlator_sump.otel import SumpMetrics
 from correlator_sump.plugins import PluginManager
 from correlator_sump.query import query_latest
+from correlator_sump.records import DEFAULT_LIMIT, query_records
 
 
 def create_app(
@@ -22,15 +30,27 @@ def create_app(
     redis_client = redis_client or redis.Redis()
     plugin_manager = plugin_manager or PluginManager()
     adapter = IngestAdapter(redis_client, metrics=SumpMetrics())
+    plugin_manager.ingest_adapter = adapter
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         await plugin_manager.discover()
         server = await run_ingest_server(adapter, port=ingest_port)
+        background_tasks = [
+            asyncio.create_task(factory(), name=name)
+            for name, factory in plugin_manager.background_task_factories.items()
+        ]
         async with server:
             yield
         server.close()
         await server.wait_closed()
+        for task in background_tasks:
+            task.cancel()
+        for task in background_tasks:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
     app = FastAPI(title="correlator-sump", lifespan=lifespan)
     app.state.plugin_manager = plugin_manager
@@ -44,6 +64,98 @@ def create_app(
     async def query(stream: str, count: int = 20) -> dict[str, list[str]]:
         records = await query_latest(redis_client, stream, count=count)
         return {"records": [r.decode("utf-8", errors="replace") for r in records]}
+
+    @app.get("/records")
+    async def records(
+        docker_host: str,
+        kind: str = "both",
+        container_id: str | None = None,
+        level: str | None = None,
+        q: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        log_cursor: str | None = None,
+        metric_cursor: str | None = None,
+        limit: int = DEFAULT_LIMIT,
+    ) -> dict:
+        return await query_records(
+            redis_client,
+            docker_host,
+            kind=kind,
+            container_id=container_id,
+            level=level,
+            q=q,
+            start=start,
+            end=end,
+            log_cursor=log_cursor,
+            metric_cursor=metric_cursor,
+            limit=limit,
+        )
+
+    async def _fetch_all(
+        kind: str, docker_host: str, start: datetime, end: datetime, **filters
+    ) -> list[dict]:
+        """Loops `query_records`' pagination until exhausted -- an
+        export needs every matching record, not just one page."""
+        all_records: list[dict] = []
+        is_log = kind == "log"
+        cursor: str | None = None
+        while True:
+            page = await query_records(
+                redis_client,
+                docker_host,
+                kind=kind,
+                start=start,
+                end=end,
+                log_cursor=cursor if is_log else None,
+                metric_cursor=cursor if not is_log else None,
+                **filters,
+            )
+            all_records.extend(page["records"])
+            next_cursor = page["next_log_cursor"] if is_log else page["next_metric_cursor"]
+            if next_cursor is None:
+                return all_records
+            cursor = next_cursor
+
+    @app.get("/recordings/export")
+    async def recordings_export(
+        docker_host: str,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> Response:
+        now = datetime.now(UTC)
+        resolved_start = start or (now - timedelta(hours=1))
+        resolved_end = end or now
+        all_records = await _fetch_all("log", docker_host, resolved_start, resolved_end)
+        data = build_recording_archive(all_records, resolved_start, resolved_end)
+        return Response(
+            content=data,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{docker_host}.recording"'},
+        )
+
+    @app.get("/tracks/export")
+    async def tracks_export(
+        docker_host: str,
+        metric: str,
+        container_id: str | None = None,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> Response:
+        if metric not in VALID_METRIC_FIELDS:
+            raise HTTPException(status_code=422, detail=f"unknown metric field: {metric!r}")
+        now = datetime.now(UTC)
+        resolved_start = start or (now - timedelta(hours=1))
+        resolved_end = end or now
+        all_records = await _fetch_all(
+            "metric", docker_host, resolved_start, resolved_end, container_id=container_id
+        )
+        data = build_track_archive(all_records, metric, resolved_start, resolved_end)
+        return Response(
+            content=data,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{docker_host}-{metric}.track"'},
+        )
 
     plugin_manager.hook.contribute_routes(app=app)
 

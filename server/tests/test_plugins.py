@@ -1,7 +1,9 @@
-"""cor-CORE.PLUGIN-001 acceptance tests (REQ-000003 Requirement 3) and
+"""cor-CORE.PLUGIN-001 acceptance tests (REQ-000003 Requirement 3),
 cor-CORE.DATASTREAM-001's transport/data-source registration mechanism
-(REQ-000004 Requirement 1)."""
+(REQ-000004 Requirement 1), and cor-CORE.DATASTREAM-003's
+register_background_task hook (REQ-000009 Requirement 1)."""
 
+import asyncio
 from importlib.metadata import EntryPoint
 
 from correlator_sump.datasource import ContainerRef
@@ -202,3 +204,62 @@ async def test_registration_hooks_fire_once_after_all_plugins_loaded(monkeypatch
     await manager.discover()
 
     assert _call_order == ["register_transport", "register_data_source"]
+
+
+async def _fake_background_task() -> None:
+    await asyncio.sleep(3600)
+
+
+class _BackgroundTaskRegisteringPlugin:
+    @hookimpl
+    def register_background_task(self, manager: PluginManager) -> None:
+        manager.add_background_task("fake-relay", _fake_background_task)
+
+
+class _AsyncBackgroundTaskRegisteringPlugin:
+    """An `async def` hookimpl -- proves `discover()` awaits this
+    registration hook's coroutine result too, same as
+    `register_data_source`."""
+
+    @hookimpl
+    async def register_background_task(self, manager: PluginManager) -> None:
+        manager.add_background_task("async-fake-relay", _fake_background_task)
+
+
+_background_task_plugin_instance = _BackgroundTaskRegisteringPlugin()
+_async_background_task_plugin_instance = _AsyncBackgroundTaskRegisteringPlugin()
+
+
+async def test_register_background_task_hook_populates_factories(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "correlator_sump.plugins._discover_entry_points",
+        lambda group="sump.plugins": [
+            EntryPoint(
+                name="background-task-plugin",
+                value=f"{__name__}:_background_task_plugin_instance",
+                group="sump.plugins",
+            )
+        ],
+    )
+    manager = PluginManager()
+    await manager.discover()
+
+    assert "fake-relay" in manager.background_task_factories
+    assert manager.background_task_factories["fake-relay"] is _fake_background_task
+
+
+async def test_async_register_background_task_hook_is_awaited(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "correlator_sump.plugins._discover_entry_points",
+        lambda group="sump.plugins": [
+            EntryPoint(
+                name="async-background-task-plugin",
+                value=f"{__name__}:_async_background_task_plugin_instance",
+                group="sump.plugins",
+            )
+        ],
+    )
+    manager = PluginManager()
+    await manager.discover()
+
+    assert "async-fake-relay" in manager.background_task_factories

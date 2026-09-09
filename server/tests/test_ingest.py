@@ -1,11 +1,19 @@
-"""cor-CORE.INGEST-001 acceptance tests (REQ-000003 Requirement 1)."""
+"""cor-CORE.INGEST-001 acceptance tests (REQ-000003 Requirement 1), plus
+cor-CORE.QUERY-001's additive stream fan-out (REQ-000007 Requirement 1)."""
 
 import asyncio
+import json
 
 import fakeredis.aioredis
 import pytest
 
-from correlator_sump.ingest import STREAM_KEY, IngestAdapter, parse_record, run_ingest_server
+from correlator_sump.ingest import (
+    STREAM_KEY,
+    IngestAdapter,
+    parse_record,
+    run_ingest_server,
+    stream_key_for,
+)
 
 
 @pytest.fixture
@@ -85,3 +93,52 @@ async def test_tcp_wire_path_end_to_end(redis_client) -> None:
 
     stored = await redis_client.lrange(STREAM_KEY, 0, -1)
     assert stored == [raw]
+
+
+def test_stream_key_for_log_and_metric() -> None:
+    assert stream_key_for({"kind": "log", "docker_host": "h1"}) == "logsump:stream:h1:log"
+    assert stream_key_for({"kind": "metric", "docker_host": "h1"}) == "logsump:stream:h1:metric"
+
+
+def test_stream_key_for_other_kind_is_none() -> None:
+    assert stream_key_for({"kind": "container", "docker_host": "h1"}) is None
+
+
+async def test_log_record_lands_in_both_the_flat_list_and_its_stream(redis_client) -> None:
+    adapter = IngestAdapter(redis_client)
+    raw = b'{"kind": "log", "docker_host": "h1", "message": "hello"}'
+
+    stored = await adapter.ingest(raw)
+
+    assert stored is True
+    assert await redis_client.lrange(STREAM_KEY, 0, -1) == [raw]
+    entries = await redis_client.xrange("logsump:stream:h1:log", min="-", max="+")
+    assert len(entries) == 1
+    _entry_id, fields = entries[0]
+    assert json.loads(fields[b"json"]) == json.loads(raw)
+
+
+async def test_metric_record_lands_in_its_own_stream(redis_client) -> None:
+    adapter = IngestAdapter(redis_client)
+    raw = b'{"kind": "metric", "docker_host": "h1", "cpu_pct": 0.5}'
+
+    await adapter.ingest(raw)
+
+    entries = await redis_client.xrange("logsump:stream:h1:metric", min="-", max="+")
+    assert len(entries) == 1
+    log_entries = await redis_client.xrange("logsump:stream:h1:log", min="-", max="+")
+    assert log_entries == []
+
+
+async def test_non_queryable_kind_gets_no_stream_entry(redis_client) -> None:
+    adapter = IngestAdapter(redis_client)
+    raw = b'{"kind": "container", "docker_host": "h1", "line": "hello"}'
+
+    stored = await adapter.ingest(raw)
+
+    assert stored is True
+    assert await redis_client.lrange(STREAM_KEY, 0, -1) == [raw]
+    log_entries = await redis_client.xrange("logsump:stream:h1:log", min="-", max="+")
+    metric_entries = await redis_client.xrange("logsump:stream:h1:metric", min="-", max="+")
+    assert log_entries == []
+    assert metric_entries == []

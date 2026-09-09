@@ -1,0 +1,46 @@
+[project]
+name = "sump-plugin-logstream"
+version = "0.1.0"
+description = "correlator Sump plugin: log-sump logstream data-stream relay (cor-CORE.DATASTREAM-003)"
+requires-python = ">=3.12"
+dependencies = [
+    "correlator-sump",
+    "httpx>=0.27",
+]
+
+[project.entry-points."sump.plugins"]
+logstream = "sump_plugin_logstream.plugin:plugin"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.7",
+    "ty>=0.0.71",
+]
+
+[tool.uv.sources]
+correlator-sump = { path = "../server", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sump_plugin_logstream"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = ["--import-mode=importlib"]
+
+[tool.ty.environment]
+python-version = "3.12"

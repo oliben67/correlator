@@ -9,9 +9,9 @@ from __future__ import annotations
 
 import inspect
 from abc import abstractmethod
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Coroutine, Iterable
 from importlib.metadata import EntryPoint, entry_points
-from typing import Any
+from typing import Any, Protocol
 
 import pluggy
 
@@ -27,6 +27,25 @@ ENTRY_POINT_GROUP = "sump.plugins"
 #: factory itself, not a pre-built instance, since the target isn't known
 #: until something (e.g. a future provisioning flow) actually needs one.
 TransportFactory = Callable[..., Transport]
+
+#: Zero-arg callable returning the coroutine a background task runs --
+#: a factory rather than a bare coroutine, since a coroutine object can
+#: only be awaited/scheduled once and `register_background_task` may be
+#: called well before `create_app`'s lifespan actually starts the task
+#: (cor-CORE.DATASTREAM-003). `Coroutine`, not the broader `Awaitable`,
+#: since `asyncio.create_task` requires specifically a coroutine object.
+BackgroundTaskFactory = Callable[[], Coroutine[Any, Any, None]]
+
+
+class IngestAdapterLike(Protocol):
+    """Structural narrowing of `correlator_sump.ingest.IngestAdapter` --
+    lets `plugins.py` reference "the thing a background task ingests
+    into" without importing the concrete class (mirrors `TransportLike`
+    in `transport.py`), and lets a test double satisfy it without
+    building a real `IngestAdapter`."""
+
+    async def ingest(self, raw: bytes) -> bool: ...
+
 
 hookspec = pluggy.HookspecMarker(PROJECT_NAME)
 hookimpl = pluggy.HookimplMarker(PROJECT_NAME)
@@ -52,6 +71,18 @@ class SumpHookSpecs:
         needs a real transport call."""
 
     @hookspec
+    def register_background_task(self, manager: PluginManager) -> None:
+        """Register a long-lived background task via
+        `manager.add_background_task(name, factory)` (cor-CORE.DATASTREAM-003)
+        -- e.g. a data source that relays records into `manager.
+        ingest_adapter` itself (set by `create_app` before `discover()`
+        runs) rather than through Fluent Bit. `create_app`'s lifespan
+        starts one `asyncio.Task` per registered factory after discovery
+        and cancels+awaits every one on shutdown. May be `async def`
+        (awaited by `PluginManager.discover`, same as
+        `register_transport`/`register_data_source`)."""
+
+    @hookspec
     def contribute_routes(self, app: Any) -> None:
         """Optionally add custom API routes to the Sump's FastAPI app."""
 
@@ -68,13 +99,21 @@ class PluginManager:
     """Wraps `pluggy.PluginManager` with Sump's entry-point discovery and
     default-on/explicit-opt-out loading (cor-CORE.PLUGIN-001)."""
 
-    def __init__(self, disabled: Iterable[str] = ()) -> None:
+    def __init__(
+        self, disabled: Iterable[str] = (), ingest_adapter: IngestAdapterLike | None = None
+    ) -> None:
         self._disabled = frozenset(disabled)
         self._pm = pluggy.PluginManager(PROJECT_NAME)
         self._pm.add_hookspecs(SumpHookSpecs)
         self.loaded_plugin_names: list[str] = []
         self.transport_types: dict[str, TransportFactory] = {}
         self.data_sources: dict[str, DataSource] = {}
+        self.background_task_factories: dict[str, BackgroundTaskFactory] = {}
+        #: Set by `create_app` before `discover()` runs -- the Sump's own
+        #: `IngestAdapter`, so a `register_background_task` hookimpl (e.g.
+        #: the logstream plugin) can build a task that ingests directly,
+        #: without a Fluent-Bit/TCP round-trip (cor-CORE.DATASTREAM-003).
+        self.ingest_adapter = ingest_adapter
 
     async def discover(self) -> list[str]:
         """Discover every package under the `sump.plugins` entry-point
@@ -109,6 +148,9 @@ class PluginManager:
         for result in self._pm.hook.register_data_source(manager=self):
             if inspect.isawaitable(result):
                 await result
+        for result in self._pm.hook.register_background_task(manager=self):
+            if inspect.isawaitable(result):
+                await result
         return self.loaded_plugin_names
 
     def add_transport_type(self, name: str, factory: TransportFactory) -> None:
@@ -120,6 +162,11 @@ class PluginManager:
         """Called by a plugin's `register_data_source` hookimpl to register
         a concrete `DataSource` under `name` (e.g. `"self"`)."""
         self.data_sources[name] = source
+
+    def add_background_task(self, name: str, factory: BackgroundTaskFactory) -> None:
+        """Called by a plugin's `register_background_task` hookimpl to
+        register a long-lived task under `name` (cor-CORE.DATASTREAM-003)."""
+        self.background_task_factories[name] = factory
 
     @property
     def hook(self) -> Any:

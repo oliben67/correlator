@@ -4,15 +4,54 @@
   "private": true,
   "description": "correlator: correlate container telemetry with service logs on a shared clickable timeline",
   "type": "module",
+  "main": "main.cjs",
   "scripts": {
-    "typecheck": "tsc --noEmit -p renderer/src",
+    "prestart": "npm run build:renderer",
+    "start": "electron .",
+    "build:renderer": "node build/build-renderer.js",
+    "watch:renderer": "node build/build-renderer.js --watch",
+    "typecheck": "tsc --noEmit -p renderer/src && tsc --noEmit -p lib && tsc --noEmit -p tests && tsc --noEmit -p build",
     "lint": "biome check .",
     "format": "biome format --write .",
     "test": "vitest run"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.10",
+    "@types/node": "^26.5.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "jotai": "^3.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "build": {
+    "appId": "com.correlator.app",
+    "fileAssociations": [
+      {
+        "ext": "recording",
+        "name": "correlator Recording",
+        "description": "correlator log recording",
+        "role": "Editor"
+      },
+      {
+        "ext": "track",
+        "name": "correlator Track",
+        "description": "correlator metric track",
+        "role": "Editor"
+      },
+      {
+        "ext": "correlator",
+        "name": "correlator Project",
+        "description": "correlator project",
+        "role": "Editor"
+      }
+    ]
   }
 }

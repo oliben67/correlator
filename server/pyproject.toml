@@ -23,6 +23,7 @@ dev = [
     "ruff>=0.7",
     "ty>=0.0.71",
     "sump-plugin-ssh",
+    "sump-plugin-logstream",
 ]
 
 [build-system]
@@ -49,3 +50,4 @@ python-version = "3.12"
 
 [tool.uv.sources]
 sump-plugin-ssh = { path = "../sump-plugin-ssh", editable = true }
+sump-plugin-logstream = { path = "../sump-plugin-logstream", editable = true }

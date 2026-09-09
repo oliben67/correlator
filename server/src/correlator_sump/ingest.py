@@ -29,6 +29,19 @@ REQUIRED_FIELDS = ("kind", "docker_host")
 class RedisLike(Protocol):
     def rpush(self, name: str, *values: bytes) -> Awaitable[Any]: ...
     def lrange(self, name: str, start: int, end: int) -> Awaitable[Any]: ...
+    def xadd(self, name: str, fields: dict[Any, Any]) -> Awaitable[Any]: ...
+
+
+QUERYABLE_KINDS = ("log", "metric")
+
+
+def stream_key_for(record: dict) -> str | None:
+    """`logsump:stream:{docker_host}:{kind}` for a record whose `kind` is
+    queryable (`cor-CORE.QUERY-001`) -- `None` for anything else (no
+    stream to fan out into, the flat-list write is still its home)."""
+    if record["kind"] not in QUERYABLE_KINDS:
+        return None
+    return f"logsump:stream:{record['docker_host']}:{record['kind']}"
 
 
 class StreamReaderLike(Protocol):
@@ -81,6 +94,16 @@ class IngestAdapter:
             span.set_attribute("sump.ingest.kind", record["kind"])
             if self._metrics is not None:
                 self._metrics.stream_depth.add(1, {"stream": STREAM_KEY})
+            stream_key = stream_key_for(record)
+            if stream_key is not None:
+                # Additive fan-out for cor-CORE.QUERY-002's /records
+                # endpoint -- the whole record as one JSON field, not
+                # flattened into per-field stream entries, since several
+                # fields (`fields`, `system`, `raw`) are themselves
+                # nested objects Redis Streams' flat string-field model
+                # can't represent directly.
+                await self.redis.xadd(stream_key, {"json": raw})
+                span.set_attribute("sump.ingest.stream_key", stream_key)
             return True
 
 
