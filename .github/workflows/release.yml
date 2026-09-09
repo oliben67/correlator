@@ -1,0 +1,60 @@
+name: Release
+
+# cor-CORE.PACKAGING-003: manually-triggered only -- never on push/pull_request
+# (that's ci.yml's job). Builds and pushes the Sump image to GHCR, and builds
+# the desktop app's installer for each platform, uploading each as a workflow
+# artifact. Never actually run from this session -- no tag was pushed, no
+# workflow_dispatch was invoked, no image was pushed to any registry.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag for the published Sump image (defaults to the short commit SHA)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  sump-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: tag
+        run: |
+          tag="${{ github.event.inputs.image_tag }}"
+          echo "tag=${tag:-$(git rev-parse --short HEAD)}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: server
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/correlator-sump:${{ steps.tag.outputs.tag }}
+
+  installers:
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+      - run: npm ci
+      - run: npm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: correlator-${{ matrix.os }}
+          path: app/dist/**
+          if-no-files-found: error

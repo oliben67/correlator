@@ -1,8 +1,8 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { forgetToken, getOrCreateToken } from "../auth-token.ts";
+import { forgetToken, getOrCreateToken, getOrCreateUserId } from "../auth-token.ts";
 import { Catalog } from "../catalog.ts";
 
 let dir: string;
@@ -53,5 +53,30 @@ describe("auth-token", () => {
     forgetToken("sump-1", catalog);
     const regenerated = getOrCreateToken("sump-1", catalog);
     expect(regenerated).not.toBe(original);
+  });
+});
+
+describe("cor-CORE.FEDERATION-001: getOrCreateUserId", () => {
+  it("creates and persists a new id on first call", () => {
+    const path = join(dir, "identity.json");
+    expect(existsSync(path)).toBe(false);
+
+    const userId = getOrCreateUserId(path);
+
+    expect(userId).toBeTruthy();
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it("returns the identical id on a second call, reading the persisted file back", () => {
+    const path = join(dir, "identity.json");
+    const first = getOrCreateUserId(path);
+    const second = getOrCreateUserId(path);
+    expect(second).toBe(first);
+  });
+
+  it("different identity file paths get different ids", () => {
+    const idA = getOrCreateUserId(join(dir, "a.json"));
+    const idB = getOrCreateUserId(join(dir, "b.json"));
+    expect(idA).not.toBe(idB);
   });
 });

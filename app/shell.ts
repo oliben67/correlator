@@ -12,7 +12,9 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { Catalog } from "./lib/catalog.ts";
+import { getOrCreateUserId } from "./lib/auth-token.ts";
+import { Catalog, type SumpRow } from "./lib/catalog.ts";
+import { transition } from "./lib/lifecycle.ts";
 import {
   addReference,
   defaultProjectPath,
@@ -104,6 +106,16 @@ const RECORDS_PARAM_KEYS: Record<keyof RecordsQueryParams, string> = {
   limit: "limit",
 };
 
+/** `X-Correlator-Token` (cor-CORE.PROVISION-003) + `X-Correlator-User-Id`
+ * (cor-CORE.FEDERATION-001) for a request to `sump` -- the one place
+ * every outgoing fetch builds its headers, replacing what were two
+ * separately-duplicated, token-only header objects. */
+function sumpHeaders(sump: SumpRow, userId: string): Record<string, string> | undefined {
+  const headers: Record<string, string> = { "X-Correlator-User-Id": userId };
+  if (sump.authToken) headers["X-Correlator-Token"] = sump.authToken;
+  return headers;
+}
+
 function resolveSump(catalogPath: string, sumpId: string) {
   mkdirSync(dirname(catalogPath), { recursive: true });
   const catalog = new Catalog(catalogPath);
@@ -141,6 +153,7 @@ export interface DownloadTrackParams {
 async function downloadAndRegister(
   catalogPath: string,
   fetchFn: typeof fetch,
+  userId: string,
   options: {
     sumpId: string;
     dataStreamId: string;
@@ -160,9 +173,7 @@ async function downloadAndRegister(
   for (const [key, value] of Object.entries(options.exportParams)) {
     if (value !== undefined) url.searchParams.set(key, value);
   }
-  const response = await fetchFn(url, {
-    headers: sump.authToken ? { "X-Correlator-Token": sump.authToken } : undefined,
-  });
+  const response = await fetchFn(url, { headers: sumpHeaders(sump, userId) });
   if (!response.ok) {
     throw new Error(`GET ${options.exportPath} failed: ${response.status}`);
   }
@@ -212,6 +223,7 @@ export function registerIpcHandlers(
   electronApi: ElectronApi,
   catalogPath: string = defaultCatalogPath(),
   fetchFn: typeof fetch = fetch,
+  userId: string = getOrCreateUserId(),
 ): void {
   electronApi.ipcMain.handle("list-sumps", async () => {
     mkdirSync(dirname(catalogPath), { recursive: true });
@@ -239,9 +251,7 @@ export function registerIpcHandlers(
       if (value !== undefined) url.searchParams.set(paramName, String(value));
     }
 
-    const response = await fetchFn(url, {
-      headers: sump.authToken ? { "X-Correlator-Token": sump.authToken } : undefined,
-    });
+    const response = await fetchFn(url, { headers: sumpHeaders(sump, userId) });
     if (!response.ok) {
       throw new Error(`GET /records failed: ${response.status}`);
     }
@@ -250,7 +260,7 @@ export function registerIpcHandlers(
 
   electronApi.ipcMain.handle("download-recording", async (...args: unknown[]) => {
     const [, params] = args as [unknown, DownloadRecordingParams];
-    return downloadAndRegister(catalogPath, fetchFn, {
+    return downloadAndRegister(catalogPath, fetchFn, userId, {
       sumpId: params.sumpId,
       dataStreamId: params.dataStreamId,
       exportPath: "/recordings/export",
@@ -263,7 +273,7 @@ export function registerIpcHandlers(
 
   electronApi.ipcMain.handle("download-track", async (...args: unknown[]) => {
     const [, params] = args as [unknown, DownloadTrackParams];
-    return downloadAndRegister(catalogPath, fetchFn, {
+    return downloadAndRegister(catalogPath, fetchFn, userId, {
       sumpId: params.sumpId,
       dataStreamId: params.dataStreamId,
       exportPath: "/tracks/export",
@@ -278,6 +288,110 @@ export function registerIpcHandlers(
       kind: "track",
       projectPath: params.projectPath,
     });
+  });
+
+  electronApi.ipcMain.handle("list-data-sources", async (...args: unknown[]) => {
+    const [, sumpId] = args as [unknown, string];
+    const sump = resolveSump(catalogPath, sumpId);
+    const url = new URL(`http://${sump.host ?? "127.0.0.1"}:${sump.port}/data-sources`);
+    const response = await fetchFn(url, { headers: sumpHeaders(sump, userId) });
+    if (!response.ok) {
+      throw new Error(`GET /data-sources failed: ${response.status}`);
+    }
+    return response.json();
+  });
+
+  electronApi.ipcMain.handle("set-data-source-privacy", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { sumpId: string; name: string; isPrivate: boolean }];
+    const sump = resolveSump(catalogPath, params.sumpId);
+    const url = new URL(
+      `http://${sump.host ?? "127.0.0.1"}:${sump.port}/data-sources/${params.name}/privacy`,
+    );
+    const response = await fetchFn(url, {
+      method: "PUT",
+      headers: { ...sumpHeaders(sump, userId), "Content-Type": "application/json" },
+      body: JSON.stringify({ is_private: params.isPrivate }),
+    });
+    if (!response.ok) {
+      throw new Error(`PUT /data-sources/${params.name}/privacy failed: ${response.status}`);
+    }
+    return response.json();
+  });
+
+  electronApi.ipcMain.handle("promote-data-stream", async (...args: unknown[]) => {
+    const [, params] = args as [
+      unknown,
+      { parentSumpId: string; name: string; host: string; imageRef: string; port?: number },
+    ];
+    const parent = resolveSump(catalogPath, params.parentSumpId);
+    const url = new URL(`http://${parent.host ?? "127.0.0.1"}:${parent.port}/promote`);
+    const response = await fetchFn(url, {
+      method: "POST",
+      headers: { ...sumpHeaders(parent, userId), "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: params.name,
+        host: params.host,
+        image_ref: params.imageRef,
+        port: params.port,
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`POST /promote failed: ${response.status}`);
+    }
+    const result = (await response.json()) as { host: string; port: number };
+
+    // Only register on success -- a failed promotion leaves nothing in
+    // the catalog, matching cor-CORE.PROJECT-003's own "failed export
+    // registers nothing" posture.
+    const catalog = new Catalog(catalogPath);
+    const now = new Date().toISOString();
+    const childSumpId = randomUUID();
+    try {
+      // secondary_sump_links.promoted_from_data_stream_id has a real FK
+      // onto data_streams(id) -- the local catalog has no picker UI yet
+      // to have already created this row, so this handler creates the
+      // minimal one itself (id != the server's own data-source name;
+      // sourceRef carries that instead, same pattern list-data-sources'
+      // results would feed into once a picker exists).
+      const dataStreamId = randomUUID();
+      catalog.upsertDataStream({
+        id: dataStreamId,
+        sumpId: params.parentSumpId,
+        kind: "promoted",
+        sourceRef: params.name,
+        ownerUserId: null,
+        isPrivate: false,
+        catalogJson: "{}",
+        createdAt: now,
+      });
+      catalog.upsertSump({
+        id: childSumpId,
+        name: params.name,
+        connectionType: "ssh",
+        host: result.host,
+        port: result.port,
+        // Always "active" once the parent's docker run itself succeeded
+        // (this handler wouldn't reach here otherwise) -- an
+        // unreachable-yet health check is a warning, not a failure,
+        // mirroring provisionRemote's own posture (ongoing traffic is
+        // plain HTTP, never tunneled through the promotion SSH hop).
+        status: transition("provisioning", "provision_succeeded"),
+        authToken: null,
+        catalogJson: "{}",
+        createdAt: now,
+        lastSeenAt: null,
+      });
+      catalog.linkSecondarySump({
+        childSumpId,
+        parentSumpId: params.parentSumpId,
+        promotedFromDataStreamId: dataStreamId,
+        createdAt: now,
+      });
+    } finally {
+      catalog.close();
+    }
+
+    return { ...result, childSumpId };
   });
 }
 

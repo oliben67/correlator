@@ -48,6 +48,13 @@ beforeEach(() => {
 
 const windowOptions = { preloadPath: "/fake/preload.cjs", indexHtmlPath: "/fake/index.html" };
 
+// Every registerIpcHandlers(...) call below passes this explicitly --
+// its default (getOrCreateUserId()) touches the real
+// ~/.correlator/identity.json, which a test must never do (same reason
+// every call here already passes an explicit catalogPath/fetchFn
+// instead of relying on defaultCatalogPath()/global fetch).
+const testUserId = "test-user-id";
+
 describe("cor-CORE.SHELL-001: window shell", () => {
   it("creates the window hidden, with contextIsolation on and nodeIntegration off", async () => {
     await createWindow(electronApi, windowOptions);
@@ -81,7 +88,7 @@ describe("cor-CORE.SHELL-001: window shell", () => {
 
 describe("cor-CORE.SHELL-002: IPC bridge", () => {
   it("every preload.cjs channel has a matching ipcMain.handle registration", () => {
-    registerIpcHandlers(electronApi, "/fake/catalog.db");
+    registerIpcHandlers(electronApi, "/fake/catalog.db", fetch, testUserId);
     const registeredChannels = (
       electronApi.ipcMain.handle as ReturnType<typeof vi.fn>
     ).mock.calls.map((call) => call[0] as string);
@@ -115,7 +122,7 @@ describe("cor-CORE.SHELL-002: IPC bridge", () => {
     });
     seeded.close();
 
-    registerIpcHandlers(electronApi, catalogPath);
+    registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
     const listSumpsHandler = (
       electronApi.ipcMain.handle as ReturnType<typeof vi.fn>
     ).mock.calls.find((call) => call[0] === "list-sumps")?.[1] as (
@@ -162,7 +169,7 @@ describe("cor-CORE.SHELL-002: IPC bridge", () => {
       );
     }) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch);
+    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
     const queryRecordsHandler = (
       electronApi.ipcMain.handle as ReturnType<typeof vi.fn>
     ).mock.calls.find((call) => call[0] === "query-records")?.[1] as (
@@ -176,7 +183,10 @@ describe("cor-CORE.SHELL-002: IPC bridge", () => {
     expect(requestedUrl?.searchParams.get("docker_host")).toBe("h1");
     expect(requestedUrl?.searchParams.get("kind")).toBe("log");
     expect(requestedUrl?.searchParams.get("limit")).toBe("50");
-    expect(requestedHeaders).toEqual({ "X-Correlator-Token": "tok" });
+    expect(requestedHeaders).toEqual({
+      "X-Correlator-Token": "tok",
+      "X-Correlator-User-Id": testUserId,
+    });
     expect(result).toEqual({ records: [], next_log_cursor: null, next_metric_cursor: null });
 
     rmSync(dir, { recursive: true, force: true });
@@ -186,7 +196,7 @@ describe("cor-CORE.SHELL-002: IPC bridge", () => {
     const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
     const catalogPath = join(dir, "catalog.db");
 
-    registerIpcHandlers(electronApi, catalogPath, vi.fn() as unknown as typeof fetch);
+    registerIpcHandlers(electronApi, catalogPath, vi.fn() as unknown as typeof fetch, testUserId);
     const queryRecordsHandler = (
       electronApi.ipcMain.handle as ReturnType<typeof vi.fn>
     ).mock.calls.find((call) => call[0] === "query-records")?.[1] as (
@@ -239,7 +249,7 @@ describe("cor-CORE.PROJECT-003: recording/track download and catalog registratio
       async () => new Response(fakeBytes, { status: 200 }),
     ) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch);
+    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
     const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
       (call) => call[0] === "download-recording",
     )?.[1] as (...args: unknown[]) => Promise<{ id: string; filePath: string }>;
@@ -292,7 +302,7 @@ describe("cor-CORE.PROJECT-003: recording/track download and catalog registratio
       async () => new Response("nope", { status: 404 }),
     ) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch);
+    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
     const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
       (call) => call[0] === "download-track",
     )?.[1] as (...args: unknown[]) => Promise<unknown>;
@@ -313,6 +323,188 @@ describe("cor-CORE.PROJECT-003: recording/track download and catalog registratio
     expect(sumps).toHaveLength(1); // only the seeded sump, nothing else registered
 
     expect(loadProject(projectPath).references).toEqual([]);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("cor-CORE.FEDERATION-001/-002: data-source listing and privacy", () => {
+  async function seedSump(catalogPath: string): Promise<void> {
+    const { Catalog } = await import("../lib/catalog.ts");
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "sump-1",
+      name: "seeded",
+      connectionType: "local",
+      host: "127.0.0.1",
+      port: 5170,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-11T00:00:00Z",
+      lastSeenAt: null,
+    });
+    seeded.close();
+  }
+
+  it("listDataSources fetches GET /data-sources with both auth headers", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    await seedSump(catalogPath);
+
+    let requestedUrl: URL | undefined;
+    let requestedHeaders: unknown;
+    const fakeFetch = vi.fn(async (url: URL, options?: RequestInit) => {
+      requestedUrl = url;
+      requestedHeaders = options?.headers;
+      return new Response(JSON.stringify({ data_sources: ["self"] }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === "list-data-sources",
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+
+    const result = await handler(null, "sump-1");
+
+    expect(requestedUrl?.pathname).toBe("/data-sources");
+    expect(requestedHeaders).toEqual({
+      "X-Correlator-Token": "tok",
+      "X-Correlator-User-Id": testUserId,
+    });
+    expect(result).toEqual({ data_sources: ["self"] });
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("setDataSourcePrivacy PUTs the privacy flag as JSON", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    await seedSump(catalogPath);
+
+    let requestedMethod: string | undefined;
+    let requestedBody: unknown;
+    const fakeFetch = vi.fn(async (_url: URL, options?: RequestInit) => {
+      requestedMethod = options?.method;
+      requestedBody = options?.body ? JSON.parse(String(options.body)) : undefined;
+      return new Response(JSON.stringify({ owner_user_id: testUserId, is_private: true }), {
+        status: 200,
+      });
+    }) as unknown as typeof fetch;
+
+    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === "set-data-source-privacy",
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+
+    const result = await handler(null, { sumpId: "sump-1", name: "self", isPrivate: true });
+
+    expect(requestedMethod).toBe("PUT");
+    expect(requestedBody).toEqual({ is_private: true });
+    expect(result).toEqual({ owner_user_id: testUserId, is_private: true });
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("cor-CORE.FEDERATION-004: promote-data-stream", () => {
+  it("registers a new sump, data stream, and secondary-sump link only on success", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+
+    const { Catalog } = await import("../lib/catalog.ts");
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "parent-1",
+      name: "parent",
+      connectionType: "local",
+      host: "127.0.0.1",
+      port: 5170,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-11T00:00:00Z",
+      lastSeenAt: null,
+    });
+    seeded.close();
+
+    const fakeFetch = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            container_name: "correlator-sump-remote",
+            host: "10.0.0.5",
+            port: 8770,
+            reachable: true,
+          }),
+          { status: 200 },
+        ),
+    ) as unknown as typeof fetch;
+
+    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === "promote-data-stream",
+    )?.[1] as (...args: unknown[]) => Promise<{ childSumpId: string }>;
+
+    const result = await handler(null, {
+      parentSumpId: "parent-1",
+      name: "remote",
+      host: "10.0.0.5",
+      imageRef: "img",
+      port: 8770,
+    });
+
+    const check = new Catalog(catalogPath);
+    const childSump = check.getSump(result.childSumpId);
+    const links = check.listSecondarySumpLinks("parent-1");
+    check.close();
+
+    expect(childSump?.host).toBe("10.0.0.5");
+    expect(childSump?.port).toBe(8770);
+    expect(childSump?.status).toBe("active");
+    expect(links).toHaveLength(1);
+    expect(links[0].childSumpId).toBe(result.childSumpId);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("registers nothing when the parent's /promote call fails", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+
+    const { Catalog } = await import("../lib/catalog.ts");
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "parent-1",
+      name: "parent",
+      connectionType: "local",
+      host: "127.0.0.1",
+      port: 5170,
+      status: "active",
+      authToken: null,
+      catalogJson: "{}",
+      createdAt: "2026-09-11T00:00:00Z",
+      lastSeenAt: null,
+    });
+    seeded.close();
+
+    const fakeFetch = vi.fn(
+      async () => new Response("nope", { status: 422 }),
+    ) as unknown as typeof fetch;
+
+    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === "promote-data-stream",
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+
+    await expect(
+      handler(null, { parentSumpId: "parent-1", name: "remote", host: "h", imageRef: "img" }),
+    ).rejects.toThrow();
+
+    const check = new Catalog(catalogPath);
+    const sumps = check.listSumps();
+    check.close();
+    expect(sumps).toHaveLength(1); // only the seeded parent, nothing else registered
 
     rmSync(dir, { recursive: true, force: true });
   });
@@ -344,6 +536,15 @@ describe("cor-CORE.PROJECT-004: classifyOpenedFile", () => {
       expect(typeof byExt[ext].name).toBe("string");
       expect(byExt[ext].role).toBe("Editor");
     }
+  });
+
+  it("cor-CORE.PACKAGING-002: package.json's build config has all three platform targets", async () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+
+    expect(pkg.build.mac.target).toBe("dmg");
+    expect(pkg.build.win.target).toBe("nsis");
+    expect(pkg.build.linux.target).toBe("AppImage");
+    expect(pkg.build.directories.output).toBe("dist");
   });
 });
 

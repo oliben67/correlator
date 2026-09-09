@@ -24,3 +24,9 @@ def otel_spans(otel_test_exporters):
     exporter, reader = otel_test_exporters
     exporter.clear()
     yield exporter, reader
+
+
+def lifespan(app):
+    """Runs the app's own lifespan context manager directly, since
+    `httpx.ASGITransport` doesn't trigger FastAPI's lifespan events."""
+    return app.router.lifespan_context(app)

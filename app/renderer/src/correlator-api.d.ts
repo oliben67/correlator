@@ -96,6 +96,37 @@ export interface DownloadResult {
   filePath: string;
 }
 
+export interface DataSourcesResult {
+  data_sources: string[];
+}
+
+export interface SetDataSourcePrivacyParams {
+  sumpId: string;
+  name: string;
+  isPrivate: boolean;
+}
+
+export interface PrivacyResult {
+  owner_user_id: string;
+  is_private: boolean;
+}
+
+export interface PromoteDataStreamParams {
+  parentSumpId: string;
+  name: string;
+  host: string;
+  imageRef: string;
+  port?: number;
+}
+
+export interface PromoteResult {
+  container_name: string;
+  host: string;
+  port: number;
+  reachable: boolean;
+  childSumpId: string;
+}
+
 export interface CorrelatorApi {
   listSumps: () => Promise<SumpSummary[]>;
   queryRecords: (
@@ -105,6 +136,9 @@ export interface CorrelatorApi {
   ) => Promise<RecordsPage>;
   downloadRecording: (params: DownloadRecordingParams) => Promise<DownloadResult>;
   downloadTrack: (params: DownloadTrackParams) => Promise<DownloadResult>;
+  listDataSources: (sumpId: string) => Promise<DataSourcesResult>;
+  setDataSourcePrivacy: (params: SetDataSourcePrivacyParams) => Promise<PrivacyResult>;
+  promoteDataStream: (params: PromoteDataStreamParams) => Promise<PromoteResult>;
 }
 
 declare global {

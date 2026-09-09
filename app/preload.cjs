@@ -13,4 +13,7 @@ contextBridge.exposeInMainWorld("correlator", {
     ipcRenderer.invoke("query-records", sumpId, dockerHost, params),
   downloadRecording: (params) => ipcRenderer.invoke("download-recording", params),
   downloadTrack: (params) => ipcRenderer.invoke("download-track", params),
+  listDataSources: (sumpId) => ipcRenderer.invoke("list-data-sources", sumpId),
+  setDataSourcePrivacy: (params) => ipcRenderer.invoke("set-data-source-privacy", params),
+  promoteDataStream: (params) => ipcRenderer.invoke("promote-data-stream", params),
 });
