@@ -3,8 +3,8 @@ name: Release
 # cor-CORE.PACKAGING-003: manually-triggered only -- never on push/pull_request
 # (that's ci.yml's job). Builds and pushes the Sump image to GHCR, and builds
 # the desktop app's installer for each platform, uploading each as a workflow
-# artifact. Never actually run from this session -- no tag was pushed, no
-# workflow_dispatch was invoked, no image was pushed to any registry.
+# artifact. First run (REQ-000015, 2026-09-12): all four jobs green, image
+# pushed to ghcr.io/oliben67/correlator-sump:c8d5598.
 
 on:
   workflow_dispatch:
@@ -22,8 +22,8 @@ jobs:
   sump-image:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/login-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -32,7 +32,7 @@ jobs:
         run: |
           tag="${{ github.event.inputs.image_tag }}"
           echo "tag=${tag:-$(git rev-parse --short HEAD)}" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: server
           push: true
@@ -47,13 +47,13 @@ jobs:
       run:
         working-directory: app
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "26"
       - run: npm ci
       - run: npm run package
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: correlator-${{ matrix.os }}
           path: app/dist/**
