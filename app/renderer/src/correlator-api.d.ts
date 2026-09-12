@@ -5,7 +5,7 @@
 export interface SumpSummary {
   id: string;
   name: string;
-  connectionType: "local" | "ssh";
+  connectionType: "local" | "ssh" | "external";
   host: string | null;
   port: number | null;
   status: "provisioning" | "active" | "unreachable" | "retired";
@@ -127,6 +127,23 @@ export interface PromoteResult {
   childSumpId: string;
 }
 
+// cor-CORE.PROVISION-006: the "Add Sump" chooser's backing actions.
+export interface ConnectExistingSumpParams {
+  name: string;
+  host: string;
+  port: number;
+  authToken?: string;
+}
+
+export interface InstallRemoteSumpParams {
+  name: string;
+  sshTarget: string;
+  sshKey?: string;
+  sshPort?: number;
+  remotePort: number;
+  imageRef: string;
+}
+
 export interface CorrelatorApi {
   listSumps: () => Promise<SumpSummary[]>;
   queryRecords: (
@@ -139,6 +156,10 @@ export interface CorrelatorApi {
   listDataSources: (sumpId: string) => Promise<DataSourcesResult>;
   setDataSourcePrivacy: (params: SetDataSourcePrivacyParams) => Promise<PrivacyResult>;
   promoteDataStream: (params: PromoteDataStreamParams) => Promise<PromoteResult>;
+  detectDocker: () => Promise<boolean>;
+  connectExistingSump: (params: ConnectExistingSumpParams) => Promise<SumpSummary>;
+  installLocalSump: () => Promise<SumpSummary>;
+  installRemoteSump: (params: InstallRemoteSumpParams) => Promise<SumpSummary>;
 }
 
 declare global {

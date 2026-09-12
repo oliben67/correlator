@@ -16,4 +16,12 @@ contextBridge.exposeInMainWorld("correlator", {
   listDataSources: (sumpId) => ipcRenderer.invoke("list-data-sources", sumpId),
   setDataSourcePrivacy: (params) => ipcRenderer.invoke("set-data-source-privacy", params),
   promoteDataStream: (params) => ipcRenderer.invoke("promote-data-stream", params),
+  // cor-CORE.PROVISION-006: the "Add Sump" chooser's backing actions --
+  // all direct invoke/handle pairs, no push channel needed (each is a
+  // user-triggered, awaited action; the renderer already knows when it
+  // succeeds).
+  detectDocker: () => ipcRenderer.invoke("detect-docker"),
+  connectExistingSump: (params) => ipcRenderer.invoke("connect-existing-sump", params),
+  installLocalSump: () => ipcRenderer.invoke("install-local-sump"),
+  installRemoteSump: (params) => ipcRenderer.invoke("install-remote-sump", params),
 });

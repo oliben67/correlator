@@ -207,4 +207,50 @@ describe("Catalog", () => {
     expect(row?.authToken).toBeNull();
     second.close();
   });
+
+  it("touchSump sets last_seen_at, leaving every other column untouched", () => {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump({
+      id: "sump-1",
+      name: "s",
+      connectionType: "local",
+      host: null,
+      port: 8765,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-08T00:00:00Z",
+      lastSeenAt: null,
+    });
+
+    catalog.touchSump("sump-1", "2026-09-12T04:00:00Z");
+
+    const row = catalog.getSump("sump-1");
+    expect(row?.lastSeenAt).toBe("2026-09-12T04:00:00Z");
+    expect(row?.status).toBe("active");
+    expect(row?.authToken).toBe("tok");
+    catalog.close();
+  });
+
+  // cor-CORE.PROVISION-006: "connect to an existing Sump" registers it
+  // with connectionType "external" -- correlator didn't provision it and
+  // owns no lifecycle for it.
+  it("round-trips a sump with connectionType 'external'", () => {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump({
+      id: "sump-1",
+      name: "existing",
+      connectionType: "external",
+      host: "10.0.0.5",
+      port: 9000,
+      status: "active",
+      authToken: null,
+      catalogJson: "{}",
+      createdAt: "2026-09-12T00:00:00Z",
+      lastSeenAt: "2026-09-12T00:00:00Z",
+    });
+
+    expect(catalog.getSump("sump-1")?.connectionType).toBe("external");
+    catalog.close();
+  });
 });

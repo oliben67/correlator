@@ -16,7 +16,7 @@ import type { SumpState } from "./lifecycle.ts";
 export interface SumpRow {
   id: string;
   name: string;
-  connectionType: "local" | "ssh";
+  connectionType: "local" | "ssh" | "external";
   host: string | null;
   port: number | null;
   status: SumpState;
@@ -124,7 +124,7 @@ function sumpFromRow(row: Record<string, unknown>): SumpRow {
   return {
     id: row.id as string,
     name: row.name as string,
-    connectionType: row.connection_type as "local" | "ssh",
+    connectionType: row.connection_type as "local" | "ssh" | "external",
     host: (row.host as string | null) ?? null,
     port: (row.port as number | null) ?? null,
     status: row.status as SumpState,
@@ -228,6 +228,13 @@ export class Catalog {
 
   setSumpStatus(id: string, status: SumpState): void {
     this.db.prepare("UPDATE sumps SET status = ? WHERE id = ?").run(status, id);
+  }
+
+  /** cor-CORE.PROVISION-001: records the last time correlator successfully
+   * talked to this Sump (a provisioning health check, or any authenticated
+   * request through the IPC bridge). */
+  touchSump(id: string, timestamp: string): void {
+    this.db.prepare("UPDATE sumps SET last_seen_at = ? WHERE id = ?").run(timestamp, id);
   }
 
   upsertDataStream(dataStream: DataStreamRow): void {

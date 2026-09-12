@@ -1,7 +1,9 @@
+import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SpawnFn } from "../lib/provision.ts";
 import type { ElectronApi, FakeableBrowserWindow } from "../shell.ts";
 import {
   classifyOpenedFile,
@@ -189,6 +191,10 @@ describe("cor-CORE.SHELL-002: IPC bridge", () => {
     });
     expect(result).toEqual({ records: [], next_log_cursor: null, next_metric_cursor: null });
 
+    const check = new Catalog(catalogPath);
+    expect(check.getSump("sump-1")?.lastSeenAt).toBeTruthy();
+    check.close();
+
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -266,8 +272,9 @@ describe("cor-CORE.PROJECT-003: recording/track download and catalog registratio
 
     const check = new Catalog(catalogPath);
     const row = check.getRecording(result.id);
-    check.close();
     expect(row?.filePath).toBe(result.filePath);
+    expect(check.getSump("sump-1")?.lastSeenAt).toBeTruthy();
+    check.close();
 
     expect(loadProject(projectPath).references).toContain(result.filePath);
 
@@ -321,6 +328,7 @@ describe("cor-CORE.PROJECT-003: recording/track download and catalog registratio
     const sumps = check.listSumps();
     check.close();
     expect(sumps).toHaveLength(1); // only the seeded sump, nothing else registered
+    expect(sumps[0].lastSeenAt).toBeNull();
 
     expect(loadProject(projectPath).references).toEqual([]);
 
@@ -374,6 +382,11 @@ describe("cor-CORE.FEDERATION-001/-002: data-source listing and privacy", () => 
     });
     expect(result).toEqual({ data_sources: ["self"] });
 
+    const { Catalog } = await import("../lib/catalog.ts");
+    const check = new Catalog(catalogPath);
+    expect(check.getSump("sump-1")?.lastSeenAt).toBeTruthy();
+    check.close();
+
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -402,6 +415,11 @@ describe("cor-CORE.FEDERATION-001/-002: data-source listing and privacy", () => 
     expect(requestedMethod).toBe("PUT");
     expect(requestedBody).toEqual({ is_private: true });
     expect(result).toEqual({ owner_user_id: testUserId, is_private: true });
+
+    const { Catalog } = await import("../lib/catalog.ts");
+    const check = new Catalog(catalogPath);
+    expect(check.getSump("sump-1")?.lastSeenAt).toBeTruthy();
+    check.close();
 
     rmSync(dir, { recursive: true, force: true });
   });
@@ -456,12 +474,17 @@ describe("cor-CORE.FEDERATION-004: promote-data-stream", () => {
 
     const check = new Catalog(catalogPath);
     const childSump = check.getSump(result.childSumpId);
+    const parentSump = check.getSump("parent-1");
     const links = check.listSecondarySumpLinks("parent-1");
     check.close();
 
     expect(childSump?.host).toBe("10.0.0.5");
     expect(childSump?.port).toBe(8770);
     expect(childSump?.status).toBe("active");
+    // The parent was the one actually contacted -- the newly-created
+    // child hasn't been directly reached by correlator yet.
+    expect(parentSump?.lastSeenAt).toBeTruthy();
+    expect(childSump?.lastSeenAt).toBeNull();
     expect(links).toHaveLength(1);
     expect(links[0].childSumpId).toBe(result.childSumpId);
 
@@ -551,5 +574,206 @@ describe("cor-CORE.PROJECT-004: classifyOpenedFile", () => {
 describe("defaultCatalogPath", () => {
   it("resolves to ~/.correlator/catalog.db", () => {
     expect(defaultCatalogPath().endsWith(join(".correlator", "catalog.db"))).toBe(true);
+  });
+});
+
+describe("cor-CORE.PROVISION-006: Add Sump chooser backing actions", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function fakeSpawn(dockerInfoExitCode: number, restExitCode: number): SpawnFn {
+    return ((cmd: string, args: string[]) => {
+      const proc = new EventEmitter() as unknown as ReturnType<SpawnFn>;
+      (proc as unknown as { stderr: EventEmitter }).stderr = new EventEmitter();
+      (proc as unknown as { stdout: EventEmitter }).stdout = new EventEmitter();
+      const code = cmd === "docker" && args[0] === "info" ? dockerInfoExitCode : restExitCode;
+      queueMicrotask(() => proc.emit("exit", code));
+      return proc;
+    }) as SpawnFn;
+  }
+
+  function fakeFetchOk(): typeof fetch {
+    return (async () => new Response(null, { status: 200 })) as unknown as typeof fetch;
+  }
+
+  function findHandler(channel: string): (...args: unknown[]) => Promise<unknown> {
+    return (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === channel,
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+  }
+
+  describe("detect-docker", () => {
+    it("returns true when docker info succeeds", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+        spawnFn: fakeSpawn(0, 0),
+      });
+
+      expect(await findHandler("detect-docker")()).toBe(true);
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("returns false when docker info fails", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+        spawnFn: fakeSpawn(1, 0),
+      });
+
+      expect(await findHandler("detect-docker")()).toBe(false);
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
+
+  describe("connect-existing-sump", () => {
+    it("registers the sump on a successful health check", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+
+      let requestedUrl: string | URL | undefined;
+      let requestedHeaders: unknown;
+      const fakeFetch = vi.fn(async (url: string | URL, options?: RequestInit) => {
+        requestedUrl = url;
+        requestedHeaders = options?.headers;
+        return new Response(null, { status: 200 });
+      }) as unknown as typeof fetch;
+
+      registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+      const result = (await findHandler("connect-existing-sump")(null, {
+        name: "existing",
+        host: "10.0.0.5",
+        port: 9000,
+        authToken: "tok",
+      })) as { connectionType: string; status: string; host: string; port: number };
+
+      expect(String(requestedUrl)).toBe("http://10.0.0.5:9000/health");
+      expect(requestedHeaders).toEqual({ "X-Correlator-Token": "tok" });
+      expect(result.connectionType).toBe("external");
+      expect(result.status).toBe("active");
+      expect(result.host).toBe("10.0.0.5");
+      expect(result.port).toBe(9000);
+
+      const { Catalog } = await import("../lib/catalog.ts");
+      const check = new Catalog(catalogPath);
+      expect(check.listSumps()).toHaveLength(1);
+      check.close();
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("rejects and writes nothing when the health check fails", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+      const fakeFetch = vi.fn(
+        async () => new Response(null, { status: 503 }),
+      ) as unknown as typeof fetch;
+
+      registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+      await expect(
+        findHandler("connect-existing-sump")(null, {
+          name: "existing",
+          host: "10.0.0.5",
+          port: 9000,
+        }),
+      ).rejects.toThrow();
+
+      const { Catalog } = await import("../lib/catalog.ts");
+      const check = new Catalog(catalogPath);
+      expect(check.listSumps()).toHaveLength(0);
+      check.close();
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
+
+  describe("install-local-sump", () => {
+    it("installs via provisionLocal and returns the active row", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+      vi.stubGlobal("fetch", fakeFetchOk());
+
+      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+        spawnFn: fakeSpawn(0, 0),
+      });
+      const result = (await findHandler("install-local-sump")()) as {
+        id: string;
+        status: string;
+      };
+
+      expect(result.id).toBe("local");
+      expect(result.status).toBe("active");
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("rejects when Docker is unavailable", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+
+      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+        spawnFn: fakeSpawn(1, 0),
+      });
+      await expect(findHandler("install-local-sump")()).rejects.toThrow(/docker/i);
+
+      const { Catalog } = await import("../lib/catalog.ts");
+      const check = new Catalog(catalogPath);
+      expect(check.listSumps()).toHaveLength(0);
+      check.close();
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
+
+  describe("install-remote-sump", () => {
+    it("provisions via provisionRemote and returns the active row", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+      vi.stubGlobal("fetch", fakeFetchOk());
+
+      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+        spawnFn: fakeSpawn(0, 0),
+      });
+      const result = (await findHandler("install-remote-sump")(null, {
+        name: "remote",
+        sshTarget: "user@example.com",
+        remotePort: 8765,
+        imageRef: "correlator/sump:latest",
+      })) as { connectionType: string; status: string };
+
+      expect(result.connectionType).toBe("ssh");
+      expect(result.status).toBe("active");
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("leaves the row retired when a docker step fails on the remote host", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+
+      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+        spawnFn: fakeSpawn(0, 1),
+      });
+      await expect(
+        findHandler("install-remote-sump")(null, {
+          name: "remote",
+          sshTarget: "user@example.com",
+          remotePort: 8765,
+          imageRef: "correlator/sump:latest",
+        }),
+      ).rejects.toThrow();
+
+      const { Catalog } = await import("../lib/catalog.ts");
+      const check = new Catalog(catalogPath);
+      const sumps = check.listSumps();
+      check.close();
+      expect(sumps).toHaveLength(1);
+      expect(sumps[0].status).toBe("retired");
+
+      rmSync(dir, { recursive: true, force: true });
+    });
   });
 });

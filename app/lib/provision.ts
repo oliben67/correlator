@@ -25,7 +25,8 @@ import { waitForHttpOk } from "./net-wait.ts";
 
 export type ImageSource =
   | { type: "tarball"; tarballPath: string; composeFile: string; imageRef?: string }
-  | { type: "registry"; ref: string; composeFile: string };
+  | { type: "registry"; ref: string; composeFile: string }
+  | { type: "build"; composeFile: string };
 
 export interface SshTarget {
   sshTarget: string;
@@ -172,25 +173,28 @@ export async function provisionLocal(
     if (params.apiToken) env.CORRELATOR_API_TOKEN = params.apiToken;
     if (params.source.type === "tarball") {
       await run("docker", ["load", "-i", params.source.tarballPath], { spawnFn, onLog });
-    } else {
+    } else if (params.source.type === "registry") {
       env.CORRELATOR_IMAGE = params.source.ref;
       await run("docker", ["pull", params.source.ref], { spawnFn, onLog });
     }
+    // "build": no pull/load step -- `docker compose up -d` below builds
+    // from the compose file's own `build:` config when the tagged image
+    // isn't present locally yet (standard Compose behavior), and reuses
+    // it unchanged on later launches once it's been built once.
     await run("docker", ["compose", "-f", params.source.composeFile, "up", "-d"], {
       spawnFn,
       onLog,
       env,
     });
 
-    onLog?.(
-      `$ waiting for the container to become ready (http://127.0.0.1:${port}/health/ready) ...`,
-    );
-    await waitForHttpOk(`http://127.0.0.1:${port}/health/ready`, {
+    onLog?.(`$ waiting for the container to become ready (http://127.0.0.1:${port}/health) ...`);
+    await waitForHttpOk(`http://127.0.0.1:${port}/health`, {
       timeoutMs: 30000,
       ...(params.apiToken ? { headers: { "X-Correlator-Token": params.apiToken } } : {}),
     });
 
     catalog.setSumpStatus(params.id, transition("provisioning", "provision_succeeded"));
+    catalog.touchSump(params.id, new Date().toISOString());
   } catch (err) {
     catalog.setSumpStatus(params.id, transition("provisioning", "provision_failed"));
     throw err;
@@ -203,7 +207,10 @@ export interface RemoteProvisionParams {
   target: SshTarget;
   remotePort: number;
   host?: string;
-  source: ImageSource;
+  // "build" is deliberately excluded: shipping a full build context over
+  // SSH to build remotely is out of scope -- remote provisioning always
+  // ships a tarball or pulls from a registry on the remote host.
+  source: Exclude<ImageSource, { type: "build" }>;
   apiToken?: string | null;
   now: string;
 }
@@ -291,13 +298,16 @@ export async function provisionRemote(
     }
 
     onLog?.(
-      `$ waiting for the container to come up (http://${host}:${params.remotePort}/health/ready) ...`,
+      `$ waiting for the container to come up (http://${host}:${params.remotePort}/health) ...`,
     );
     try {
-      await waitForHttpOk(`http://${host}:${params.remotePort}/health/ready`, {
+      await waitForHttpOk(`http://${host}:${params.remotePort}/health`, {
         timeoutMs: 30000,
         ...(params.apiToken ? { headers: { "X-Correlator-Token": params.apiToken } } : {}),
       });
+      // Only reachability actually confirmed just now counts as "seen" --
+      // the catch below is a best-effort warning, not confirmed contact.
+      catalog.touchSump(params.id, new Date().toISOString());
     } catch (err) {
       // Provisioning-only SSH: not being directly reachable yet is a
       // best-effort warning, not a hard failure -- ongoing traffic is
@@ -344,6 +354,56 @@ export async function uninstallLocal(
     sumpId,
     transition(row.status === "unreachable" ? "unreachable" : "active", "retire"),
   );
+}
+
+// cor-CORE.PROVISION-006 ("connect to an existing Sump"): a single
+// short-timeout reachability check, not waitForHttpOk's retry loop -- the
+// user is asserting a Sump is *already* running, so a bad host/port
+// should fail fast and visibly rather than retrying silently for up to
+// 30s. Registers directly (no "provisioning" interim state) since there
+// is no installation side effect to recover from mid-crash, mirroring
+// shell.ts's promote-data-stream handler ("only register on success").
+export interface ConnectExistingParams {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  authToken?: string | null;
+  now: string;
+}
+
+export async function connectExistingSump(
+  catalog: Catalog,
+  params: ConnectExistingParams,
+  options: { fetchFn?: typeof fetch } = {},
+): Promise<void> {
+  const { fetchFn = fetch } = options;
+  const headers: Record<string, string> = {};
+  if (params.authToken) headers["X-Correlator-Token"] = params.authToken;
+
+  const url = `http://${params.host}:${params.port}/health`;
+  let response: Response;
+  try {
+    response = await fetchFn(url, { headers, signal: AbortSignal.timeout(5000) });
+  } catch (err) {
+    throw new Error(`could not reach ${url}: ${(err as Error).message ?? err}`);
+  }
+  if (!response.ok) {
+    throw new Error(`GET /health failed: ${response.status}`);
+  }
+
+  catalog.upsertSump({
+    id: params.id,
+    name: params.name,
+    connectionType: "external",
+    host: params.host,
+    port: params.port,
+    status: "active",
+    authToken: params.authToken ?? null,
+    catalogJson: "{}",
+    createdAt: params.now,
+    lastSeenAt: params.now,
+  });
 }
 
 export async function uninstallRemote(

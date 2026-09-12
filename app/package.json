@@ -37,6 +37,20 @@
     "directories": {
       "output": "dist"
     },
+    "extraResources": [
+      {
+        "from": "../server",
+        "to": "server",
+        "filter": [
+          "Dockerfile",
+          "docker-compose.yml",
+          "fluent-bit.conf",
+          "pyproject.toml",
+          "uv.lock",
+          "src/**/*"
+        ]
+      }
+    ],
     "mac": {
       "target": "dmg",
       "category": "public.app-category.developer-tools"

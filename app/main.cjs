@@ -66,7 +66,14 @@ async function bootstrap() {
   registerAppLifecycle(electron);
 
   electron.app.whenReady().then(async () => {
-    registerIpcHandlers(electron);
+    // cor-CORE.PROVISION-006: isPackaged/resourcesPath are only known
+    // here (real electron.app state) -- threaded through so the
+    // install-local-sump/install-remote-sump handlers can resolve the
+    // bundled server/ resources directory.
+    registerIpcHandlers(electron, undefined, undefined, undefined, {
+      isPackaged: electron.app.isPackaged,
+      resourcesPath: process.resourcesPath,
+    });
     mainWindowRef = await createWindow(electron, {
       preloadPath: path.join(__dirname, "preload.cjs"),
       indexHtmlPath: path.join(__dirname, "renderer", "index.html"),

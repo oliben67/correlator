@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Catalog } from "../catalog.ts";
 import {
+  connectExistingSump,
   detectLocalDocker,
   NetworkExposureError,
   provisionLocal,
@@ -88,8 +89,77 @@ describe("provisionLocal", () => {
 
     const row = catalog.getSump("sump-1");
     expect(row?.status).toBe("active");
+    // touchSump stamps the real "now" at success time, not params.now
+    // (that's the provisioning-start timestamp, a different moment).
+    expect(row?.lastSeenAt).toBeTruthy();
+    expect(new Date(row?.lastSeenAt ?? "").toISOString()).toBe(row?.lastSeenAt);
     expect(calls.some((c) => c.includes("pull"))).toBe(true);
     expect(calls.some((c) => c.includes("up"))).toBe(true);
+    catalog.close();
+  });
+
+  it("does not set last_seen_at when a docker step fails", async () => {
+    const catalog = new Catalog(dbPath);
+    await expect(
+      provisionLocal(
+        catalog,
+        {
+          id: "sump-1",
+          name: "local",
+          source: { type: "registry", ref: "correlator/sump:latest", composeFile: composeOkPath },
+          now: "2026-09-08T00:00:00Z",
+        },
+        { spawnFn: fakeSpawn(1, []) },
+      ),
+    ).rejects.toThrow();
+
+    expect(catalog.getSump("sump-1")?.lastSeenAt).toBeNull();
+    catalog.close();
+  });
+
+  // cor-CORE.PROVISION-005 (auto-start) needs to run the bundled Sump
+  // without any registry -- no `docker pull`/`docker load` at all, only
+  // `docker compose up -d`, which builds locally from the compose file's
+  // own `build:` config when the tagged image isn't present yet.
+  it('"build" source: never pulls or loads, only runs docker compose up', async () => {
+    vi.stubGlobal("fetch", fakeFetchOk());
+    const catalog = new Catalog(dbPath);
+    const calls: string[][] = [];
+    await provisionLocal(
+      catalog,
+      {
+        id: "sump-1",
+        name: "local",
+        source: { type: "build", composeFile: composeOkPath },
+        now: "2026-09-12T00:00:00Z",
+      },
+      { spawnFn: fakeSpawn(0, calls) },
+    );
+
+    expect(calls.some((c) => c.includes("pull"))).toBe(false);
+    expect(calls.some((c) => c.includes("load"))).toBe(false);
+    expect(calls.some((c) => c.includes("up"))).toBe(true);
+    expect(catalog.getSump("sump-1")?.status).toBe("active");
+    catalog.close();
+  });
+
+  it('"build" source: marks the sump retired, not stuck provisioning, on failure', async () => {
+    const catalog = new Catalog(dbPath);
+    const calls: string[][] = [];
+    await expect(
+      provisionLocal(
+        catalog,
+        {
+          id: "sump-1",
+          name: "local",
+          source: { type: "build", composeFile: composeOkPath },
+          now: "2026-09-12T00:00:00Z",
+        },
+        { spawnFn: fakeSpawn(1, calls) },
+      ),
+    ).rejects.toThrow();
+
+    expect(catalog.getSump("sump-1")?.status).toBe("retired");
     catalog.close();
   });
 
@@ -217,6 +287,7 @@ describe("provisionRemote / uninstallRemote", () => {
       expect(joined).not.toMatch(/\bgit\b/);
     }
     expect(catalog.getSump("sump-2")?.status).toBe("active");
+    expect(catalog.getSump("sump-2")?.lastSeenAt).toBeTruthy();
     catalog.close();
   });
 
@@ -247,6 +318,109 @@ describe("provisionRemote / uninstallRemote", () => {
 
     expect(catalog.getSump("sump-2")?.status).toBe("retired");
     expect(catalog.getSump("sump-2")?.authToken).toBeNull();
+    catalog.close();
+  });
+});
+
+// cor-CORE.PROVISION-006 ("connect to an existing Sump"): a single-shot
+// reachability check, not provisionLocal/Remote's install flow -- no
+// spawn faking needed, only fetch.
+describe("connectExistingSump", () => {
+  it("registers the sump when GET /health succeeds", async () => {
+    const catalog = new Catalog(dbPath);
+    let requestedUrl: string | URL | undefined;
+    let requestedHeaders: unknown;
+    const fakeFetch = vi.fn(async (url: string | URL, options?: RequestInit) => {
+      requestedUrl = url;
+      requestedHeaders = options?.headers;
+      return new Response(null, { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await connectExistingSump(
+      catalog,
+      {
+        id: "sump-1",
+        name: "existing",
+        host: "10.0.0.5",
+        port: 9000,
+        authToken: "tok",
+        now: "2026-09-12T00:00:00Z",
+      },
+      { fetchFn: fakeFetch },
+    );
+
+    expect(String(requestedUrl)).toBe("http://10.0.0.5:9000/health");
+    expect(requestedHeaders).toEqual({ "X-Correlator-Token": "tok" });
+    const row = catalog.getSump("sump-1");
+    expect(row?.connectionType).toBe("external");
+    expect(row?.status).toBe("active");
+    expect(row?.lastSeenAt).toBe("2026-09-12T00:00:00Z");
+    catalog.close();
+  });
+
+  it("sends no auth header when no token is given", async () => {
+    const catalog = new Catalog(dbPath);
+    let requestedHeaders: unknown;
+    const fakeFetch = vi.fn(async (_url: string | URL, options?: RequestInit) => {
+      requestedHeaders = options?.headers;
+      return new Response(null, { status: 200 });
+    }) as unknown as typeof fetch;
+
+    await connectExistingSump(
+      catalog,
+      { id: "sump-1", name: "existing", host: "10.0.0.5", port: 9000, now: "2026-09-12T00:00:00Z" },
+      { fetchFn: fakeFetch },
+    );
+
+    expect(requestedHeaders).toEqual({});
+    catalog.close();
+  });
+
+  it("rejects and writes nothing when the response is not ok", async () => {
+    const catalog = new Catalog(dbPath);
+    const fakeFetch = vi.fn(
+      async () => new Response(null, { status: 503 }),
+    ) as unknown as typeof fetch;
+
+    await expect(
+      connectExistingSump(
+        catalog,
+        {
+          id: "sump-1",
+          name: "existing",
+          host: "10.0.0.5",
+          port: 9000,
+          now: "2026-09-12T00:00:00Z",
+        },
+        { fetchFn: fakeFetch },
+      ),
+    ).rejects.toThrow(/GET \/health failed: 503/);
+
+    expect(catalog.listSumps()).toHaveLength(0);
+    catalog.close();
+  });
+
+  it("rejects and writes nothing when fetch itself throws", async () => {
+    const catalog = new Catalog(dbPath);
+    const fakeFetch = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+
+    await expect(
+      connectExistingSump(
+        catalog,
+        {
+          id: "sump-1",
+          name: "existing",
+          host: "10.0.0.5",
+          port: 9000,
+          now: "2026-09-12T00:00:00Z",
+        },
+        { fetchFn: fakeFetch },
+      ),
+    ).rejects.toThrow(/could not reach/);
+
+    expect(catalog.listSumps()).toHaveLength(0);
     catalog.close();
   });
 });

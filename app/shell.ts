@@ -8,13 +8,15 @@
  * split cttc's own main.js/lib/* boundary already draws.
  */
 
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { getOrCreateUserId } from "./lib/auth-token.ts";
+import { getOrCreateToken, getOrCreateUserId } from "./lib/auth-token.ts";
 import { Catalog, type SumpRow } from "./lib/catalog.ts";
 import { transition } from "./lib/lifecycle.ts";
+import { installLocalSump, LOCAL_SUMP_ID, resolveServerResourcesDir } from "./lib/local-sump.ts";
 import {
   addReference,
   defaultProjectPath,
@@ -22,6 +24,13 @@ import {
   loadProject,
   saveProject,
 } from "./lib/project.ts";
+import {
+  connectExistingSump,
+  detectLocalDocker,
+  provisionRemote,
+  type RemoteProvisionParams,
+  type SpawnFn,
+} from "./lib/provision.ts";
 
 export interface RecordsQueryParams {
   kind?: "log" | "metric" | "both";
@@ -130,6 +139,17 @@ function resolveSump(catalogPath: string, sumpId: string) {
   }
 }
 
+/** cor-CORE.PROVISION-001: marks `sumpId` as last seen now -- called after
+ * any authenticated request through the IPC bridge succeeds. */
+function touchSump(catalogPath: string, sumpId: string): void {
+  const catalog = new Catalog(catalogPath);
+  try {
+    catalog.touchSump(sumpId, new Date().toISOString());
+  } finally {
+    catalog.close();
+  }
+}
+
 export interface DownloadRecordingParams {
   sumpId: string;
   dataStreamId: string;
@@ -210,6 +230,7 @@ async function downloadAndRegister(
         createdAt: now,
       });
     }
+    catalog.touchSump(options.sumpId, now);
   } finally {
     catalog.close();
   }
@@ -219,12 +240,21 @@ async function downloadAndRegister(
   return { id, filePath };
 }
 
+export interface ProvisionIpcOptions {
+  isPackaged?: boolean;
+  resourcesPath?: string;
+  spawnFn?: SpawnFn;
+}
+
 export function registerIpcHandlers(
   electronApi: ElectronApi,
   catalogPath: string = defaultCatalogPath(),
   fetchFn: typeof fetch = fetch,
   userId: string = getOrCreateUserId(),
+  provisionOptions: ProvisionIpcOptions = {},
 ): void {
+  const { isPackaged = false, resourcesPath, spawnFn = spawn } = provisionOptions;
+
   electronApi.ipcMain.handle("list-sumps", async () => {
     mkdirSync(dirname(catalogPath), { recursive: true });
     const catalog = new Catalog(catalogPath);
@@ -255,6 +285,7 @@ export function registerIpcHandlers(
     if (!response.ok) {
       throw new Error(`GET /records failed: ${response.status}`);
     }
+    touchSump(catalogPath, sumpId);
     return response.json();
   });
 
@@ -298,6 +329,7 @@ export function registerIpcHandlers(
     if (!response.ok) {
       throw new Error(`GET /data-sources failed: ${response.status}`);
     }
+    touchSump(catalogPath, sumpId);
     return response.json();
   });
 
@@ -315,6 +347,7 @@ export function registerIpcHandlers(
     if (!response.ok) {
       throw new Error(`PUT /data-sources/${params.name}/privacy failed: ${response.status}`);
     }
+    touchSump(catalogPath, params.sumpId);
     return response.json();
   });
 
@@ -381,6 +414,7 @@ export function registerIpcHandlers(
         createdAt: now,
         lastSeenAt: null,
       });
+      catalog.touchSump(params.parentSumpId, now);
       catalog.linkSecondarySump({
         childSumpId,
         parentSumpId: params.parentSumpId,
@@ -392,6 +426,100 @@ export function registerIpcHandlers(
     }
 
     return { ...result, childSumpId };
+  });
+
+  // cor-CORE.PROVISION-006: the "Add Sump" chooser's three backing actions,
+  // plus the Docker-availability check it renders around. Each is a
+  // direct, awaited, user-triggered call -- no fire-and-forget, no push
+  // notification back to the renderer needed (unlike the retired
+  // cor-CORE.PROVISION-005's `sumps-changed`).
+  electronApi.ipcMain.handle("detect-docker", async () => detectLocalDocker(spawnFn));
+
+  electronApi.ipcMain.handle("connect-existing-sump", async (...args: unknown[]) => {
+    const [, params] = args as [
+      unknown,
+      { name: string; host: string; port: number; authToken?: string },
+    ];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      const id = randomUUID();
+      await connectExistingSump(
+        catalog,
+        {
+          id,
+          name: params.name,
+          host: params.host,
+          port: params.port,
+          authToken: params.authToken ?? null,
+          now: new Date().toISOString(),
+        },
+        { fetchFn },
+      );
+      return catalog.getSump(id);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("install-local-sump", async () => {
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      await installLocalSump(catalog, {
+        isPackaged,
+        resourcesPath,
+        spawnFn,
+        onLog: (line) => console.error(`[install-local] ${line}`),
+      });
+      return catalog.getSump(LOCAL_SUMP_ID);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("install-remote-sump", async (...args: unknown[]) => {
+    const [, params] = args as [
+      unknown,
+      {
+        name: string;
+        sshTarget: string;
+        sshKey?: string;
+        sshPort?: number;
+        remotePort: number;
+        imageRef: string;
+      },
+    ];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      const id = randomUUID();
+      const composeFile = join(
+        resolveServerResourcesDir(isPackaged, resourcesPath),
+        "docker-compose.yml",
+      );
+      const apiToken = getOrCreateToken(id, catalog);
+      const remoteParams: RemoteProvisionParams = {
+        id,
+        name: params.name,
+        target: {
+          sshTarget: params.sshTarget,
+          sshKey: params.sshKey ?? null,
+          sshPort: params.sshPort,
+        },
+        remotePort: params.remotePort,
+        source: { type: "registry", ref: params.imageRef, composeFile },
+        apiToken,
+        now: new Date().toISOString(),
+      };
+      await provisionRemote(catalog, remoteParams, {
+        spawnFn,
+        onLog: (line) => console.error(`[install-remote] ${line}`),
+      });
+      return catalog.getSump(id);
+    } finally {
+      catalog.close();
+    }
   });
 }
 
