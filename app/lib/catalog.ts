@@ -197,12 +197,27 @@ function trackFromRow(row: Record<string, unknown>): TrackRow {
   };
 }
 
+/** BUG-000002: `CREATE TABLE IF NOT EXISTS` never adds a column to a
+ * `sumps` table that already existed before that column was introduced
+ * -- a real, pre-existing `.correlator/catalog.db` needs an explicit
+ * migration, not just a schema string covering a fresh install. */
+function ensureColumn(db: DatabaseSync, table: string, column: string, ddl: string): void {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!columns.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  }
+}
+
 export class Catalog {
   private readonly db: DatabaseSync;
 
   constructor(dbPath: string) {
     this.db = new DatabaseSync(dbPath);
     this.db.exec(SCHEMA);
+    // cor-CORE.PROVISION-008: added after this table already shipped --
+    // migrate an existing database, not just a fresh one.
+    ensureColumn(this.db, "sumps", "parent_sump_id", "parent_sump_id TEXT REFERENCES sumps(id)");
+    ensureColumn(this.db, "sumps", "docker_host", "docker_host TEXT");
   }
 
   close(): void {

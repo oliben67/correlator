@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Catalog } from "../catalog.ts";
 
@@ -175,6 +176,65 @@ describe("Catalog", () => {
     expect(second.listSumps()).toHaveLength(1);
     expect(second.getSump("sump-1")?.id).toBe("sump-1");
     second.close();
+  });
+
+  // BUG-000002: a real, pre-existing catalog.db predating cor-CORE.PROVISION-008
+  // has a `sumps` table already -- `CREATE TABLE IF NOT EXISTS` never adds
+  // a column to a table that already exists, so opening it without an
+  // explicit migration threw "table sumps has no column named parent_sump_id".
+  it("BUG-000002: opening a pre-existing catalog missing parent_sump_id/docker_host migrates it in place", () => {
+    const raw = new DatabaseSync(dbPath);
+    raw.exec(`
+      CREATE TABLE sumps (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        connection_type TEXT NOT NULL,
+        host TEXT,
+        port INTEGER,
+        status TEXT NOT NULL DEFAULT 'provisioning',
+        auth_token TEXT,
+        catalog_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_seen_at TEXT
+      );
+    `);
+    raw
+      .prepare(`
+      INSERT INTO sumps (id, name, connection_type, host, port, status, auth_token, catalog_json, created_at, last_seen_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+      .run(
+        "sump-1",
+        "pre-existing",
+        "local",
+        null,
+        null,
+        "active",
+        null,
+        "{}",
+        "2026-09-01T00:00:00Z",
+        null,
+      );
+    raw.close();
+
+    const catalog = new Catalog(dbPath);
+    const row = catalog.getSump("sump-1");
+    expect(row?.id).toBe("sump-1");
+    expect(row?.parentSumpId).toBeNull();
+    expect(row?.dockerHost).toBeNull();
+
+    catalog.syncLogicalSump({
+      id: "sump-1:host-a",
+      parentSumpId: "sump-1",
+      dockerHost: "host-a",
+      name: "host-a",
+      host: null,
+      port: null,
+      authToken: null,
+      createdAt: "2026-09-12T00:00:00Z",
+    });
+    expect(catalog.getSump("sump-1:host-a")?.dockerHost).toBe("host-a");
+    catalog.close();
   });
 
   // BUG-0035: cttc's daemon registry had no explicit "forget" path at all --
