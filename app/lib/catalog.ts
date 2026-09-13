@@ -16,7 +16,7 @@ import type { SumpState } from "./lifecycle.ts";
 export interface SumpRow {
   id: string;
   name: string;
-  connectionType: "local" | "ssh" | "external";
+  connectionType: "local" | "ssh" | "external" | "logical";
   host: string | null;
   port: number | null;
   status: SumpState;
@@ -24,7 +24,22 @@ export interface SumpRow {
   catalogJson: string;
   createdAt: string;
   lastSeenAt: string | null;
+  /** cor-CORE.PROVISION-008: the root Sump this row was discovered under,
+   * or `null` for a root Sump itself. */
+  parentSumpId: string | null;
+  /** cor-CORE.PROVISION-008: the docker_host this row is scoped to, or
+   * `null` for a root Sump with no fixed scope. */
+  dockerHost: string | null;
 }
+
+/** `upsertSump`'s input -- `parentSumpId`/`dockerHost` are optional here
+ * (defaulted to `null`) so every pre-existing call site constructing a
+ * plain root-Sump row keeps compiling unchanged; `SumpRow` itself (the
+ * read-back shape) always carries them concretely. */
+export type UpsertSumpInput = Omit<SumpRow, "parentSumpId" | "dockerHost"> & {
+  parentSumpId?: string | null;
+  dockerHost?: string | null;
+};
 
 export interface DataStreamRow {
   id: string;
@@ -74,7 +89,9 @@ CREATE TABLE IF NOT EXISTS sumps (
   auth_token TEXT,
   catalog_json TEXT NOT NULL,
   created_at TEXT NOT NULL,
-  last_seen_at TEXT
+  last_seen_at TEXT,
+  parent_sump_id TEXT REFERENCES sumps(id),
+  docker_host TEXT
 );
 
 CREATE TABLE IF NOT EXISTS data_streams (
@@ -118,13 +135,20 @@ CREATE TABLE IF NOT EXISTS tracks (
 );
 CREATE INDEX IF NOT EXISTS idx_tracks_data_stream_sump ON tracks(data_stream_id, sump_id);
 CREATE INDEX IF NOT EXISTS idx_tracks_recording_id ON tracks(recording_id);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
+);
 `;
+
+const PRIMARY_SUMP_ID_KEY = "primary_sump_id";
 
 function sumpFromRow(row: Record<string, unknown>): SumpRow {
   return {
     id: row.id as string,
     name: row.name as string,
-    connectionType: row.connection_type as "local" | "ssh" | "external",
+    connectionType: row.connection_type as "local" | "ssh" | "external" | "logical",
     host: (row.host as string | null) ?? null,
     port: (row.port as number | null) ?? null,
     status: row.status as SumpState,
@@ -132,6 +156,8 @@ function sumpFromRow(row: Record<string, unknown>): SumpRow {
     catalogJson: row.catalog_json as string,
     createdAt: row.created_at as string,
     lastSeenAt: (row.last_seen_at as string | null) ?? null,
+    parentSumpId: (row.parent_sump_id as string | null) ?? null,
+    dockerHost: (row.docker_host as string | null) ?? null,
   };
 }
 
@@ -183,11 +209,11 @@ export class Catalog {
     this.db.close();
   }
 
-  upsertSump(sump: SumpRow): void {
+  upsertSump(sump: UpsertSumpInput): void {
     this.db
       .prepare(`
-      INSERT INTO sumps (id, name, connection_type, host, port, status, auth_token, catalog_json, created_at, last_seen_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sumps (id, name, connection_type, host, port, status, auth_token, catalog_json, created_at, last_seen_at, parent_sump_id, docker_host)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         connection_type = excluded.connection_type,
@@ -196,7 +222,9 @@ export class Catalog {
         status = excluded.status,
         auth_token = excluded.auth_token,
         catalog_json = excluded.catalog_json,
-        last_seen_at = excluded.last_seen_at
+        last_seen_at = excluded.last_seen_at,
+        parent_sump_id = excluded.parent_sump_id,
+        docker_host = excluded.docker_host
     `)
       .run(
         sump.id,
@@ -209,6 +237,8 @@ export class Catalog {
         sump.catalogJson,
         sump.createdAt,
         sump.lastSeenAt,
+        sump.parentSumpId ?? null,
+        sump.dockerHost ?? null,
       );
   }
 
@@ -235,6 +265,73 @@ export class Catalog {
    * request through the IPC bridge). */
   touchSump(id: string, timestamp: string): void {
     this.db.prepare("UPDATE sumps SET last_seen_at = ? WHERE id = ?").run(timestamp, id);
+  }
+
+  renameSump(id: string, name: string): void {
+    this.db.prepare("UPDATE sumps SET name = ? WHERE id = ?").run(name, id);
+  }
+
+  /** cor-CORE.PROVISION-007: which Sump the switcher UI currently treats
+   * as primary -- a UI-selection concept, distinct from `SumpState`'s
+   * `"active"` (reachability). `null` until a user explicitly picks one. */
+  getPrimarySumpId(): string | null {
+    const row = this.db
+      .prepare("SELECT value FROM app_settings WHERE key = ?")
+      .get(PRIMARY_SUMP_ID_KEY) as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  setPrimarySumpId(id: string | null): void {
+    if (id === null) {
+      this.db.prepare("DELETE FROM app_settings WHERE key = ?").run(PRIMARY_SUMP_ID_KEY);
+      return;
+    }
+    this.db
+      .prepare(`
+      INSERT INTO app_settings (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `)
+      .run(PRIMARY_SUMP_ID_KEY, id);
+  }
+
+  /** cor-CORE.PROVISION-008: idempotently registers one docker-host-scoped
+   * logical Sump under a parent -- INSERT ... DO NOTHING so a later sync
+   * never clobbers a user's own rename of this row. */
+  syncLogicalSump(params: {
+    id: string;
+    parentSumpId: string;
+    dockerHost: string;
+    name: string;
+    host: string | null;
+    port: number | null;
+    authToken: string | null;
+    createdAt: string;
+  }): void {
+    this.db
+      .prepare(`
+      INSERT INTO sumps (id, name, connection_type, host, port, status, auth_token, catalog_json, created_at, last_seen_at, parent_sump_id, docker_host)
+      VALUES (?, ?, 'logical', ?, ?, 'active', ?, '{}', ?, NULL, ?, ?)
+      ON CONFLICT(id) DO NOTHING
+    `)
+      .run(
+        params.id,
+        params.name,
+        params.host,
+        params.port,
+        params.authToken,
+        params.createdAt,
+        params.parentSumpId,
+        params.dockerHost,
+      );
+  }
+
+  /** cor-CORE.PROVISION-008: retires every logical Sump discovered under
+   * `parentSumpId` -- their data disappears with the parent's connection,
+   * so a dangling live-looking child would be wrong. */
+  retireChildSumps(parentSumpId: string): void {
+    this.db
+      .prepare("UPDATE sumps SET status = 'retired' WHERE parent_sump_id = ?")
+      .run(parentSumpId);
   }
 
   upsertDataStream(dataStream: DataStreamRow): void {

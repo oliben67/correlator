@@ -241,7 +241,10 @@ export async function provisionRemote(
     port: params.remotePort,
     status: "provisioning",
     authToken: params.apiToken ?? null,
-    catalogJson: sumpDocument(params.source, { name: params.name }),
+    // cor-CORE.PROVISION-007: the SSH target is persisted here (not just
+    // used transiently) so a later uninstall can reconstruct it without
+    // asking the user to retype it.
+    catalogJson: sumpDocument(params.source, { name: params.name, sshTarget: params.target }),
     createdAt: params.now,
     lastSeenAt: null,
   });
@@ -330,6 +333,11 @@ function parseImageSource(catalogJson: string): ImageSource {
     );
   }
   return doc.imageSource;
+}
+
+function parseSshTarget(catalogJson: string): SshTarget | null {
+  const doc = JSON.parse(catalogJson) as { sshTarget?: SshTarget };
+  return doc.sshTarget ?? null;
 }
 
 export async function uninstallLocal(
@@ -431,4 +439,54 @@ export async function uninstallRemote(
     sumpId,
     transition(row.status === "unreachable" ? "unreachable" : "active", "retire"),
   );
+}
+
+// cor-CORE.PROVISION-007: the switcher UI's single "Uninstall"/"Disconnect"
+// action dispatches here regardless of connectionType -- callers never need
+// to know which underlying mechanism a given Sump uses.
+export async function uninstallSump(
+  catalog: Catalog,
+  sumpId: string,
+  options: ProvisionCommonOptions & { sshBin?: string } = {},
+): Promise<void> {
+  const row = catalog.getSump(sumpId);
+  if (!row) throw new Error(`no sump ${sumpId} in catalog`);
+
+  if (row.connectionType === "local") {
+    await uninstallLocal(catalog, sumpId, options);
+  } else if (row.connectionType === "ssh") {
+    const target = parseSshTarget(row.catalogJson);
+    if (!target) {
+      throw new Error(
+        `sump ${sumpId} has no recorded SSH target -- cannot resolve how to uninstall`,
+      );
+    }
+    await uninstallRemote(catalog, sumpId, target, options);
+  } else if (row.connectionType === "external") {
+    // correlator never provisioned this Sump and owns no lifecycle for
+    // it -- nothing to tear down, just forget it.
+    catalog.setSumpToken(sumpId, null);
+    catalog.setSumpStatus(
+      sumpId,
+      transition(row.status === "unreachable" ? "unreachable" : "active", "retire"),
+    );
+  } else {
+    // cor-CORE.PROVISION-008: "logical" -- a docker-host-scoped row has
+    // no container/connection of its own to tear down and shares its
+    // parent's token, so just retire the row. The switcher UI doesn't
+    // offer this action for a logical row in this pass; defensive only.
+    catalog.setSumpStatus(
+      sumpId,
+      transition(row.status === "unreachable" ? "unreachable" : "active", "retire"),
+    );
+  }
+
+  // cor-CORE.PROVISION-008: a root Sump's discovered docker hosts share
+  // its connection -- their data disappears with it, so any host-scoped
+  // children go with it too, regardless of which branch above ran.
+  catalog.retireChildSumps(sumpId);
+
+  if (catalog.getPrimarySumpId() === sumpId) {
+    catalog.setPrimarySumpId(null);
+  }
 }

@@ -5,7 +5,7 @@
 export interface SumpSummary {
   id: string;
   name: string;
-  connectionType: "local" | "ssh" | "external";
+  connectionType: "local" | "ssh" | "external" | "logical";
   host: string | null;
   port: number | null;
   status: "provisioning" | "active" | "unreachable" | "retired";
@@ -13,6 +13,8 @@ export interface SumpSummary {
   catalogJson: string;
   createdAt: string;
   lastSeenAt: string | null;
+  parentSumpId: string | null;
+  dockerHost: string | null;
 }
 
 export interface LogRecord {
@@ -74,7 +76,6 @@ export interface RecordsPage {
 export interface DownloadRecordingParams {
   sumpId: string;
   dataStreamId: string;
-  dockerHost: string;
   start?: string;
   end?: string;
   projectPath?: string;
@@ -83,7 +84,6 @@ export interface DownloadRecordingParams {
 export interface DownloadTrackParams {
   sumpId: string;
   dataStreamId: string;
-  dockerHost: string;
   containerId?: string;
   metric: string;
   start?: string;
@@ -144,13 +144,23 @@ export interface InstallRemoteSumpParams {
   imageRef: string;
 }
 
+// cor-CORE.PROVISION-007: the switcher UI's backing actions.
+export interface SelectPrimarySumpParams {
+  sumpId: string;
+}
+
+export interface RenameSumpParams {
+  sumpId: string;
+  name: string;
+}
+
+export interface UninstallSumpParams {
+  sumpId: string;
+}
+
 export interface CorrelatorApi {
   listSumps: () => Promise<SumpSummary[]>;
-  queryRecords: (
-    sumpId: string,
-    dockerHost: string,
-    params?: RecordsQueryParams,
-  ) => Promise<RecordsPage>;
+  queryRecords: (sumpId: string, params?: RecordsQueryParams) => Promise<RecordsPage>;
   downloadRecording: (params: DownloadRecordingParams) => Promise<DownloadResult>;
   downloadTrack: (params: DownloadTrackParams) => Promise<DownloadResult>;
   listDataSources: (sumpId: string) => Promise<DataSourcesResult>;
@@ -160,6 +170,10 @@ export interface CorrelatorApi {
   connectExistingSump: (params: ConnectExistingSumpParams) => Promise<SumpSummary>;
   installLocalSump: () => Promise<SumpSummary>;
   installRemoteSump: (params: InstallRemoteSumpParams) => Promise<SumpSummary>;
+  getPrimarySumpId: () => Promise<string | null>;
+  selectPrimarySump: (params: SelectPrimarySumpParams) => Promise<void>;
+  renameSump: (params: RenameSumpParams) => Promise<SumpSummary>;
+  uninstallSump: (params: UninstallSumpParams) => Promise<void>;
 }
 
 declare global {

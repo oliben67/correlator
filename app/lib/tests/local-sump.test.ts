@@ -37,6 +37,8 @@ function sumpRow(overrides: Partial<SumpRow>): SumpRow {
     catalogJson: "{}",
     createdAt: "2026-09-12T00:00:00Z",
     lastSeenAt: null,
+    parentSumpId: null,
+    dockerHost: null,
     ...overrides,
   };
 }

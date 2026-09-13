@@ -253,4 +253,195 @@ describe("Catalog", () => {
     expect(catalog.getSump("sump-1")?.connectionType).toBe("external");
     catalog.close();
   });
+
+  it("renameSump changes only the name", () => {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump({
+      id: "sump-1",
+      name: "old name",
+      connectionType: "local",
+      host: null,
+      port: 8765,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-08T00:00:00Z",
+      lastSeenAt: null,
+    });
+
+    catalog.renameSump("sump-1", "new name");
+
+    const row = catalog.getSump("sump-1");
+    expect(row?.name).toBe("new name");
+    expect(row?.status).toBe("active");
+    expect(row?.authToken).toBe("tok");
+    catalog.close();
+  });
+
+  // cor-CORE.PROVISION-007: the switcher UI's primary-Sump selection --
+  // a UI concept, distinct from SumpState's "active" (reachability).
+  describe("primary sump id", () => {
+    it("defaults to null before any selection is made", () => {
+      const catalog = new Catalog(dbPath);
+      expect(catalog.getPrimarySumpId()).toBeNull();
+      catalog.close();
+    });
+
+    it("round-trips a set value", () => {
+      const catalog = new Catalog(dbPath);
+      catalog.setPrimarySumpId("sump-1");
+      expect(catalog.getPrimarySumpId()).toBe("sump-1");
+      catalog.close();
+    });
+
+    it("overwrites a previously set value", () => {
+      const catalog = new Catalog(dbPath);
+      catalog.setPrimarySumpId("sump-1");
+      catalog.setPrimarySumpId("sump-2");
+      expect(catalog.getPrimarySumpId()).toBe("sump-2");
+      catalog.close();
+    });
+
+    it("clears back to null", () => {
+      const catalog = new Catalog(dbPath);
+      catalog.setPrimarySumpId("sump-1");
+      catalog.setPrimarySumpId(null);
+      expect(catalog.getPrimarySumpId()).toBeNull();
+      catalog.close();
+    });
+
+    it("survives reopening the catalog file", () => {
+      let catalog = new Catalog(dbPath);
+      catalog.setPrimarySumpId("sump-1");
+      catalog.close();
+
+      catalog = new Catalog(dbPath);
+      expect(catalog.getPrimarySumpId()).toBe("sump-1");
+      catalog.close();
+    });
+  });
+
+  // cor-CORE.PROVISION-008: every docker host a root Sump knows about
+  // becomes its own catalog-only, host-scoped Sump row.
+  describe("syncLogicalSump", () => {
+    function seedRoot(catalog: Catalog) {
+      catalog.upsertSump({
+        id: "root-1",
+        name: "root",
+        connectionType: "local",
+        host: "127.0.0.1",
+        port: 8765,
+        status: "active",
+        authToken: "tok",
+        catalogJson: "{}",
+        createdAt: "2026-09-12T00:00:00Z",
+        lastSeenAt: null,
+      });
+    }
+
+    it("registers a new host-scoped row sharing the parent's connection", () => {
+      const catalog = new Catalog(dbPath);
+      seedRoot(catalog);
+
+      catalog.syncLogicalSump({
+        id: "root-1:host-a",
+        parentSumpId: "root-1",
+        dockerHost: "host-a",
+        name: "host-a",
+        host: "127.0.0.1",
+        port: 8765,
+        authToken: "tok",
+        createdAt: "2026-09-12T00:01:00Z",
+      });
+
+      const row = catalog.getSump("root-1:host-a");
+      expect(row?.connectionType).toBe("logical");
+      expect(row?.parentSumpId).toBe("root-1");
+      expect(row?.dockerHost).toBe("host-a");
+      expect(row?.status).toBe("active");
+      expect(row?.host).toBe("127.0.0.1");
+      expect(row?.port).toBe(8765);
+      expect(row?.authToken).toBe("tok");
+      catalog.close();
+    });
+
+    it("never clobbers a user's own rename on a repeat sync", () => {
+      const catalog = new Catalog(dbPath);
+      seedRoot(catalog);
+      const params = {
+        id: "root-1:host-a",
+        parentSumpId: "root-1",
+        dockerHost: "host-a",
+        name: "host-a",
+        host: "127.0.0.1",
+        port: 8765,
+        authToken: "tok",
+        createdAt: "2026-09-12T00:01:00Z",
+      };
+      catalog.syncLogicalSump(params);
+      catalog.renameSump("root-1:host-a", "my renamed host");
+
+      catalog.syncLogicalSump(params);
+
+      expect(catalog.getSump("root-1:host-a")?.name).toBe("my renamed host");
+      catalog.close();
+    });
+  });
+
+  describe("retireChildSumps", () => {
+    it("retires every logical sump discovered under a parent, leaves others untouched", () => {
+      const catalog = new Catalog(dbPath);
+      catalog.upsertSump({
+        id: "root-1",
+        name: "root",
+        connectionType: "local",
+        host: "127.0.0.1",
+        port: 8765,
+        status: "active",
+        authToken: "tok",
+        catalogJson: "{}",
+        createdAt: "2026-09-12T00:00:00Z",
+        lastSeenAt: null,
+      });
+      catalog.upsertSump({
+        id: "root-2",
+        name: "other root",
+        connectionType: "local",
+        host: "127.0.0.1",
+        port: 8766,
+        status: "active",
+        authToken: null,
+        catalogJson: "{}",
+        createdAt: "2026-09-12T00:00:00Z",
+        lastSeenAt: null,
+      });
+      catalog.syncLogicalSump({
+        id: "root-1:host-a",
+        parentSumpId: "root-1",
+        dockerHost: "host-a",
+        name: "host-a",
+        host: "127.0.0.1",
+        port: 8765,
+        authToken: "tok",
+        createdAt: "2026-09-12T00:01:00Z",
+      });
+      catalog.syncLogicalSump({
+        id: "root-2:host-b",
+        parentSumpId: "root-2",
+        dockerHost: "host-b",
+        name: "host-b",
+        host: "127.0.0.1",
+        port: 8766,
+        authToken: null,
+        createdAt: "2026-09-12T00:01:00Z",
+      });
+
+      catalog.retireChildSumps("root-1");
+
+      expect(catalog.getSump("root-1:host-a")?.status).toBe("retired");
+      expect(catalog.getSump("root-1")?.status).toBe("active");
+      expect(catalog.getSump("root-2:host-b")?.status).toBe("active");
+      catalog.close();
+    });
+  });
 });

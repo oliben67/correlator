@@ -147,7 +147,7 @@ describe("cor-CORE.SHELL-002: IPC bridge", () => {
     seeded.upsertSump({
       id: "sump-1",
       name: "seeded",
-      connectionType: "local",
+      connectionType: "logical",
       host: "127.0.0.1",
       port: 5170,
       status: "active",
@@ -155,6 +155,7 @@ describe("cor-CORE.SHELL-002: IPC bridge", () => {
       catalogJson: "{}",
       createdAt: "2026-09-08T00:00:00Z",
       lastSeenAt: null,
+      dockerHost: "h1",
     });
     seeded.close();
 
@@ -178,7 +179,7 @@ describe("cor-CORE.SHELL-002: IPC bridge", () => {
       ...args: unknown[]
     ) => Promise<unknown>;
 
-    const result = await queryRecordsHandler(null, "sump-1", "h1", { kind: "log", limit: 50 });
+    const result = await queryRecordsHandler(null, "sump-1", { kind: "log", limit: 50 });
 
     expect(requestedUrl?.origin).toBe("http://127.0.0.1:5170");
     expect(requestedUrl?.pathname).toBe("/records");
@@ -229,7 +230,7 @@ describe("cor-CORE.PROJECT-003: recording/track download and catalog registratio
     seeded.upsertSump({
       id: "sump-1",
       name: "seeded",
-      connectionType: "local",
+      connectionType: "logical",
       host: "127.0.0.1",
       port: 5170,
       status: "active",
@@ -237,6 +238,7 @@ describe("cor-CORE.PROJECT-003: recording/track download and catalog registratio
       catalogJson: "{}",
       createdAt: "2026-09-10T00:00:00Z",
       lastSeenAt: null,
+      dockerHost: "h1",
     });
     seeded.upsertDataStream({
       id: "ds-1",
@@ -263,7 +265,6 @@ describe("cor-CORE.PROJECT-003: recording/track download and catalog registratio
     const result = await handler(null, {
       sumpId: "sump-1",
       dataStreamId: "ds-1",
-      dockerHost: "h1",
       projectPath,
     });
 
@@ -775,5 +776,288 @@ describe("cor-CORE.PROVISION-006: Add Sump chooser backing actions", () => {
 
       rmSync(dir, { recursive: true, force: true });
     });
+  });
+});
+
+describe("cor-CORE.PROVISION-007: sump management and switcher", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function findHandler(channel: string): (...args: unknown[]) => Promise<unknown> {
+    return (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === channel,
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+  }
+
+  function fakeFetchOk(): typeof fetch {
+    return (async () => new Response(null, { status: 200 })) as unknown as typeof fetch;
+  }
+
+  async function seedExternalSump(catalogPath: string, id: string) {
+    const { Catalog } = await import("../lib/catalog.ts");
+    const { connectExistingSump } = await import("../lib/provision.ts");
+    const catalog = new Catalog(catalogPath);
+    await connectExistingSump(
+      catalog,
+      { id, name: "existing", host: "10.0.0.5", port: 9000, now: "2026-09-12T00:00:00Z" },
+      { fetchFn: fakeFetchOk() },
+    );
+    catalog.close();
+  }
+
+  describe("get-primary-sump-id / select-primary-sump", () => {
+    it("defaults to null, then round-trips a selection", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+      await seedExternalSump(catalogPath, "sump-1");
+      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+
+      expect(await findHandler("get-primary-sump-id")()).toBeNull();
+
+      await findHandler("select-primary-sump")(null, { sumpId: "sump-1" });
+      expect(await findHandler("get-primary-sump-id")()).toBe("sump-1");
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("rejects an unknown sump id", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+
+      await expect(
+        findHandler("select-primary-sump")(null, { sumpId: "no-such-sump" }),
+      ).rejects.toThrow(/no sump/i);
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("rejects a retired sump id", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+      await seedExternalSump(catalogPath, "sump-1");
+      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+      await findHandler("uninstall-sump")(null, { sumpId: "sump-1" });
+
+      await expect(findHandler("select-primary-sump")(null, { sumpId: "sump-1" })).rejects.toThrow(
+        /retired/i,
+      );
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
+
+  describe("rename-sump", () => {
+    it("renames and returns the updated row", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+      await seedExternalSump(catalogPath, "sump-1");
+      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+
+      const result = (await findHandler("rename-sump")(null, {
+        sumpId: "sump-1",
+        name: "renamed",
+      })) as { name: string };
+
+      expect(result.name).toBe("renamed");
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
+
+  describe("uninstall-sump", () => {
+    it("retires an external sump with no docker/ssh side effect", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+      await seedExternalSump(catalogPath, "sump-1");
+      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+
+      await findHandler("uninstall-sump")(null, { sumpId: "sump-1" });
+
+      const { Catalog } = await import("../lib/catalog.ts");
+      const check = new Catalog(catalogPath);
+      const row = check.getSump("sump-1");
+      check.close();
+      expect(row?.status).toBe("retired");
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("clears the primary selection when the uninstalled sump was primary", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+      await seedExternalSump(catalogPath, "sump-1");
+      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+      await findHandler("select-primary-sump")(null, { sumpId: "sump-1" });
+
+      await findHandler("uninstall-sump")(null, { sumpId: "sump-1" });
+
+      expect(await findHandler("get-primary-sump-id")()).toBeNull();
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
+});
+
+describe("cor-CORE.PROVISION-008: docker-host-scoped logical sumps", () => {
+  function findHandler(channel: string): (...args: unknown[]) => Promise<unknown> {
+    return (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === channel,
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+  }
+
+  it("list-sumps discovers docker hosts under an active root and registers one logical sump per host", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    const { Catalog } = await import("../lib/catalog.ts");
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "root-1",
+      name: "root",
+      connectionType: "local",
+      host: "127.0.0.1",
+      port: 8765,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-12T00:00:00Z",
+      lastSeenAt: null,
+    });
+    seeded.close();
+
+    const fakeFetch = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ data_sources: ["self", "host-b"] }), { status: 200 }),
+    ) as unknown as typeof fetch;
+
+    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    const result = (await findHandler("list-sumps")()) as Array<{
+      id: string;
+      connectionType: string;
+      parentSumpId: string | null;
+      dockerHost: string | null;
+    }>;
+
+    expect(result).toHaveLength(3);
+    const self = result.find((r) => r.id === "root-1:self");
+    const hostB = result.find((r) => r.id === "root-1:host-b");
+    expect(self?.connectionType).toBe("logical");
+    expect(self?.parentSumpId).toBe("root-1");
+    expect(self?.dockerHost).toBe("self");
+    expect(hostB?.dockerHost).toBe("host-b");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("list-sumps skips a root that fails to answer /data-sources, without breaking the rest of the list", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    const { Catalog } = await import("../lib/catalog.ts");
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "root-1",
+      name: "unreachable root",
+      connectionType: "local",
+      host: "127.0.0.1",
+      port: 8765,
+      status: "active",
+      authToken: null,
+      catalogJson: "{}",
+      createdAt: "2026-09-12T00:00:00Z",
+      lastSeenAt: null,
+    });
+    seeded.close();
+
+    const fakeFetch = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+
+    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    const result = (await findHandler("list-sumps")()) as Array<{ id: string }>;
+
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("root-1");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("query-records resolves docker_host from the target sump's own row, not a caller-supplied argument", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    const { Catalog } = await import("../lib/catalog.ts");
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "root-1",
+      name: "root",
+      connectionType: "local",
+      host: "127.0.0.1",
+      port: 8765,
+      status: "active",
+      authToken: null,
+      catalogJson: "{}",
+      createdAt: "2026-09-12T00:00:00Z",
+      lastSeenAt: null,
+    });
+    seeded.upsertSump({
+      id: "root-1:host-a",
+      name: "host-a",
+      connectionType: "logical",
+      host: "127.0.0.1",
+      port: 8765,
+      status: "active",
+      authToken: null,
+      catalogJson: "{}",
+      createdAt: "2026-09-12T00:00:00Z",
+      lastSeenAt: null,
+      parentSumpId: "root-1",
+      dockerHost: "host-a",
+    });
+    seeded.close();
+
+    let requestedUrl: URL | undefined;
+    const fakeFetch = vi.fn(async (url: URL) => {
+      requestedUrl = url;
+      return new Response(
+        JSON.stringify({ records: [], next_log_cursor: null, next_metric_cursor: null }),
+        {
+          status: 200,
+        },
+      );
+    }) as unknown as typeof fetch;
+
+    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    await findHandler("query-records")(null, "root-1:host-a", {});
+
+    expect(requestedUrl?.searchParams.get("docker_host")).toBe("host-a");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("query-records throws a clear error against a root sump with no docker_host scope", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    const { Catalog } = await import("../lib/catalog.ts");
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "root-1",
+      name: "root",
+      connectionType: "local",
+      host: "127.0.0.1",
+      port: 8765,
+      status: "active",
+      authToken: null,
+      catalogJson: "{}",
+      createdAt: "2026-09-12T00:00:00Z",
+      lastSeenAt: null,
+    });
+    seeded.close();
+
+    registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+    await expect(findHandler("query-records")(null, "root-1", {})).rejects.toThrow(
+      /no docker_host scope/,
+    );
+
+    rmSync(dir, { recursive: true, force: true });
   });
 });

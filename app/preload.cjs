@@ -9,8 +9,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 // process boundary.
 contextBridge.exposeInMainWorld("correlator", {
   listSumps: () => ipcRenderer.invoke("list-sumps"),
-  queryRecords: (sumpId, dockerHost, params) =>
-    ipcRenderer.invoke("query-records", sumpId, dockerHost, params),
+  queryRecords: (sumpId, params) => ipcRenderer.invoke("query-records", sumpId, params),
   downloadRecording: (params) => ipcRenderer.invoke("download-recording", params),
   downloadTrack: (params) => ipcRenderer.invoke("download-track", params),
   listDataSources: (sumpId) => ipcRenderer.invoke("list-data-sources", sumpId),
@@ -24,4 +23,9 @@ contextBridge.exposeInMainWorld("correlator", {
   connectExistingSump: (params) => ipcRenderer.invoke("connect-existing-sump", params),
   installLocalSump: () => ipcRenderer.invoke("install-local-sump"),
   installRemoteSump: (params) => ipcRenderer.invoke("install-remote-sump", params),
+  // cor-CORE.PROVISION-007: the switcher UI's backing actions.
+  getPrimarySumpId: () => ipcRenderer.invoke("get-primary-sump-id"),
+  selectPrimarySump: (params) => ipcRenderer.invoke("select-primary-sump", params),
+  renameSump: (params) => ipcRenderer.invoke("rename-sump", params),
+  uninstallSump: (params) => ipcRenderer.invoke("uninstall-sump", params),
 });

@@ -13,6 +13,7 @@ import {
   type SpawnFn,
   uninstallLocal,
   uninstallRemote,
+  uninstallSump,
   validateComposeFile,
 } from "../provision.ts";
 
@@ -291,6 +292,33 @@ describe("provisionRemote / uninstallRemote", () => {
     catalog.close();
   });
 
+  // cor-CORE.PROVISION-007: the SSH target must survive in the catalog so
+  // a later uninstall can reconstruct it without asking the user again.
+  it("persists the SSH target in catalogJson", async () => {
+    vi.stubGlobal("fetch", fakeFetchOk());
+    const catalog = new Catalog(dbPath);
+    await provisionRemote(
+      catalog,
+      {
+        id: "sump-2",
+        name: "remote",
+        target: { sshTarget: "user@example.com", sshKey: "/path/to/key", sshPort: 2222 },
+        remotePort: 8765,
+        source: { type: "registry", ref: "correlator/sump:latest", composeFile: composeOkPath },
+        now: "2026-09-08T00:00:00Z",
+      },
+      { spawnFn: fakeSpawn(0, []) },
+    );
+
+    const doc = JSON.parse(catalog.getSump("sump-2")?.catalogJson ?? "{}");
+    expect(doc.sshTarget).toEqual({
+      sshTarget: "user@example.com",
+      sshKey: "/path/to/key",
+      sshPort: 2222,
+    });
+    catalog.close();
+  });
+
   it("uninstallRemote clears the token and marks the sump retired", async () => {
     vi.stubGlobal("fetch", fakeFetchOk());
     const catalog = new Catalog(dbPath);
@@ -318,6 +346,213 @@ describe("provisionRemote / uninstallRemote", () => {
 
     expect(catalog.getSump("sump-2")?.status).toBe("retired");
     expect(catalog.getSump("sump-2")?.authToken).toBeNull();
+    catalog.close();
+  });
+});
+
+// cor-CORE.PROVISION-007: the switcher UI's single "Uninstall"/"Disconnect"
+// action -- dispatches on connectionType so callers never need to know
+// which underlying mechanism a given Sump uses.
+describe("uninstallSump", () => {
+  it("dispatches to uninstallLocal for a local sump", async () => {
+    vi.stubGlobal("fetch", fakeFetchOk());
+    const catalog = new Catalog(dbPath);
+    await provisionLocal(
+      catalog,
+      {
+        id: "sump-1",
+        name: "local",
+        source: { type: "registry", ref: "correlator/sump:latest", composeFile: composeOkPath },
+        now: "2026-09-08T00:00:00Z",
+      },
+      { spawnFn: fakeSpawn(0, []) },
+    );
+
+    const calls: string[][] = [];
+    await uninstallSump(catalog, "sump-1", { spawnFn: fakeSpawn(0, calls) });
+
+    expect(calls.some((c) => c.includes("down"))).toBe(true);
+    expect(catalog.getSump("sump-1")?.status).toBe("retired");
+    catalog.close();
+  });
+
+  it("dispatches to uninstallRemote for an ssh sump, using the persisted target", async () => {
+    vi.stubGlobal("fetch", fakeFetchOk());
+    const catalog = new Catalog(dbPath);
+    await provisionRemote(
+      catalog,
+      {
+        id: "sump-2",
+        name: "remote",
+        target: { sshTarget: "user@example.com", sshKey: null },
+        remotePort: 8765,
+        source: { type: "registry", ref: "correlator/sump:latest", composeFile: composeOkPath },
+        now: "2026-09-08T00:00:00Z",
+      },
+      { spawnFn: fakeSpawn(0, []) },
+    );
+
+    const calls: string[][] = [];
+    await uninstallSump(catalog, "sump-2", { spawnFn: fakeSpawn(0, calls) });
+
+    expect(calls.some((c) => c[0] === "ssh")).toBe(true);
+    expect(catalog.getSump("sump-2")?.status).toBe("retired");
+    catalog.close();
+  });
+
+  it("throws for an ssh sump with no recorded target", async () => {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump({
+      id: "sump-3",
+      name: "legacy ssh",
+      connectionType: "ssh",
+      host: "10.0.0.9",
+      port: 8765,
+      status: "active",
+      authToken: null,
+      catalogJson: "{}",
+      createdAt: "2026-09-08T00:00:00Z",
+      lastSeenAt: null,
+    });
+
+    await expect(uninstallSump(catalog, "sump-3", { spawnFn: fakeSpawn(0, []) })).rejects.toThrow(
+      /no recorded SSH target/,
+    );
+    catalog.close();
+  });
+
+  it("retires an external sump with no docker/ssh side effect", async () => {
+    const catalog = new Catalog(dbPath);
+    await connectExistingSump(
+      catalog,
+      { id: "sump-4", name: "existing", host: "10.0.0.5", port: 9000, now: "2026-09-12T00:00:00Z" },
+      { fetchFn: fakeFetchOk() },
+    );
+
+    const calls: string[][] = [];
+    await uninstallSump(catalog, "sump-4", { spawnFn: fakeSpawn(0, calls) });
+
+    expect(calls).toHaveLength(0);
+    expect(catalog.getSump("sump-4")?.status).toBe("retired");
+    expect(catalog.getSump("sump-4")?.authToken).toBeNull();
+    catalog.close();
+  });
+
+  it("clears the primary selection when the uninstalled sump was primary", async () => {
+    const catalog = new Catalog(dbPath);
+    await connectExistingSump(
+      catalog,
+      { id: "sump-5", name: "existing", host: "10.0.0.5", port: 9000, now: "2026-09-12T00:00:00Z" },
+      { fetchFn: fakeFetchOk() },
+    );
+    catalog.setPrimarySumpId("sump-5");
+
+    await uninstallSump(catalog, "sump-5", { spawnFn: fakeSpawn(0, []) });
+
+    expect(catalog.getPrimarySumpId()).toBeNull();
+    catalog.close();
+  });
+
+  it("leaves an unrelated primary selection untouched", async () => {
+    const catalog = new Catalog(dbPath);
+    await connectExistingSump(
+      catalog,
+      { id: "sump-6", name: "existing", host: "10.0.0.5", port: 9000, now: "2026-09-12T00:00:00Z" },
+      { fetchFn: fakeFetchOk() },
+    );
+    catalog.setPrimarySumpId("sump-other");
+
+    await uninstallSump(catalog, "sump-6", { spawnFn: fakeSpawn(0, []) });
+
+    expect(catalog.getPrimarySumpId()).toBe("sump-other");
+    catalog.close();
+  });
+
+  // cor-CORE.PROVISION-008: uninstalling a root cascades to retire the
+  // host-scoped Sumps discovered under it, regardless of connectionType.
+  it("cascades to retire host-scoped children of a local sump", async () => {
+    vi.stubGlobal("fetch", fakeFetchOk());
+    const catalog = new Catalog(dbPath);
+    await provisionLocal(
+      catalog,
+      {
+        id: "sump-7",
+        name: "local",
+        source: { type: "registry", ref: "correlator/sump:latest", composeFile: composeOkPath },
+        now: "2026-09-08T00:00:00Z",
+      },
+      { spawnFn: fakeSpawn(0, []) },
+    );
+    catalog.syncLogicalSump({
+      id: "sump-7:host-a",
+      parentSumpId: "sump-7",
+      dockerHost: "host-a",
+      name: "host-a",
+      host: null,
+      port: 8765,
+      authToken: null,
+      createdAt: "2026-09-08T00:01:00Z",
+    });
+
+    await uninstallSump(catalog, "sump-7", { spawnFn: fakeSpawn(0, []) });
+
+    expect(catalog.getSump("sump-7:host-a")?.status).toBe("retired");
+    catalog.close();
+  });
+
+  it("cascades to retire host-scoped children of an external sump", async () => {
+    const catalog = new Catalog(dbPath);
+    await connectExistingSump(
+      catalog,
+      { id: "sump-8", name: "existing", host: "10.0.0.5", port: 9000, now: "2026-09-12T00:00:00Z" },
+      { fetchFn: fakeFetchOk() },
+    );
+    catalog.syncLogicalSump({
+      id: "sump-8:host-a",
+      parentSumpId: "sump-8",
+      dockerHost: "host-a",
+      name: "host-a",
+      host: "10.0.0.5",
+      port: 9000,
+      authToken: null,
+      createdAt: "2026-09-12T00:01:00Z",
+    });
+
+    await uninstallSump(catalog, "sump-8", { spawnFn: fakeSpawn(0, []) });
+
+    expect(catalog.getSump("sump-8:host-a")?.status).toBe("retired");
+    catalog.close();
+  });
+
+  it("defensively retires a logical sump directly, with no parent side-effect, if ever invoked on one", async () => {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump({
+      id: "root-9",
+      name: "root",
+      connectionType: "local",
+      host: "127.0.0.1",
+      port: 8765,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-12T00:00:00Z",
+      lastSeenAt: null,
+    });
+    catalog.syncLogicalSump({
+      id: "root-9:host-a",
+      parentSumpId: "root-9",
+      dockerHost: "host-a",
+      name: "host-a",
+      host: "127.0.0.1",
+      port: 8765,
+      authToken: "tok",
+      createdAt: "2026-09-12T00:01:00Z",
+    });
+
+    await uninstallSump(catalog, "root-9:host-a", { spawnFn: fakeSpawn(0, []) });
+
+    expect(catalog.getSump("root-9:host-a")?.status).toBe("retired");
+    expect(catalog.getSump("root-9")?.status).toBe("active");
     catalog.close();
   });
 });

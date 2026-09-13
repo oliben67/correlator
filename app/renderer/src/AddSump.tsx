@@ -27,7 +27,13 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export function AddSump({ onSumpAdded }: { onSumpAdded: () => void }) {
+export function AddSump({
+  onSumpAdded,
+  heading = "No sumps provisioned yet.",
+}: {
+  onSumpAdded: () => void;
+  heading?: string | null;
+}) {
   const [docker, setDocker] = useState<DockerState>({ status: "checking" });
   const [expanded, setExpanded] = useState<ExpandedOption>(null);
   const [action, setAction] = useState<ActionState>({ phase: "idle" });
@@ -56,7 +62,7 @@ export function AddSump({ onSumpAdded }: { onSumpAdded: () => void }) {
 
   return (
     <div>
-      <p>No sumps provisioned yet.</p>
+      {heading && <p>{heading}</p>}
 
       <div style={sectionStyle}>
         <button type="button" onClick={() => toggle("connect")}>

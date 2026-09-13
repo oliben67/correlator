@@ -30,6 +30,7 @@ import {
   provisionRemote,
   type RemoteProvisionParams,
   type SpawnFn,
+  uninstallSump,
 } from "./lib/provision.ts";
 
 export interface RecordsQueryParams {
@@ -150,10 +151,49 @@ function touchSump(catalogPath: string, sumpId: string): void {
   }
 }
 
+/** cor-CORE.PROVISION-008: for every active root Sump, best-effort
+ * discovers the docker hosts it knows about and registers one
+ * host-scoped logical Sump per host, sharing the root's own connection.
+ * A failed discovery for one root Sump never blocks the rest -- this
+ * runs on every `list-sumps` call, not as a one-time action. */
+async function syncLogicalSumps(
+  catalog: Catalog,
+  fetchFn: typeof fetch,
+  userId: string,
+): Promise<void> {
+  const roots = catalog
+    .listSumps()
+    .filter((sump) => sump.connectionType !== "logical" && sump.status === "active");
+
+  for (const root of roots) {
+    try {
+      const url = new URL(`http://${root.host ?? "127.0.0.1"}:${root.port}/data-sources`);
+      const response = await fetchFn(url, { headers: sumpHeaders(root, userId) });
+      if (!response.ok) continue;
+      const result = (await response.json()) as { data_sources?: string[] };
+      const now = new Date().toISOString();
+      for (const dockerHost of result.data_sources ?? []) {
+        catalog.syncLogicalSump({
+          id: `${root.id}:${dockerHost}`,
+          parentSumpId: root.id,
+          dockerHost,
+          name: dockerHost,
+          host: root.host,
+          port: root.port,
+          authToken: root.authToken,
+          createdAt: now,
+        });
+      }
+    } catch {
+      // Best-effort: an unreachable root Sump just keeps whatever
+      // logical children it already had, if any.
+    }
+  }
+}
+
 export interface DownloadRecordingParams {
   sumpId: string;
   dataStreamId: string;
-  dockerHost: string;
   start?: string;
   end?: string;
   projectPath?: string;
@@ -162,7 +202,6 @@ export interface DownloadRecordingParams {
 export interface DownloadTrackParams {
   sumpId: string;
   dataStreamId: string;
-  dockerHost: string;
   containerId?: string;
   metric: string;
   start?: string;
@@ -189,7 +228,11 @@ async function downloadAndRegister(
   // reference -- so no catalog/project write happens before this
   // succeeds.
   const sump = resolveSump(catalogPath, options.sumpId);
+  if (!sump.dockerHost) {
+    throw new Error(`sump ${options.sumpId} has no docker_host scope -- target a host-scoped sump`);
+  }
   const url = new URL(`http://${sump.host ?? "127.0.0.1"}:${sump.port}${options.exportPath}`);
+  url.searchParams.set("docker_host", sump.dockerHost);
   for (const [key, value] of Object.entries(options.exportParams)) {
     if (value !== undefined) url.searchParams.set(key, value);
   }
@@ -259,6 +302,7 @@ export function registerIpcHandlers(
     mkdirSync(dirname(catalogPath), { recursive: true });
     const catalog = new Catalog(catalogPath);
     try {
+      await syncLogicalSumps(catalog, fetchFn, userId);
       return catalog.listSumps();
     } finally {
       catalog.close();
@@ -266,16 +310,14 @@ export function registerIpcHandlers(
   });
 
   electronApi.ipcMain.handle("query-records", async (...args: unknown[]) => {
-    const [, sumpId, dockerHost, params = {}] = args as [
-      unknown,
-      string,
-      string,
-      RecordsQueryParams,
-    ];
+    const [, sumpId, params = {}] = args as [unknown, string, RecordsQueryParams];
 
     const sump = resolveSump(catalogPath, sumpId);
+    if (!sump.dockerHost) {
+      throw new Error(`sump ${sumpId} has no docker_host scope -- target a host-scoped sump`);
+    }
     const url = new URL(`http://${sump.host ?? "127.0.0.1"}:${sump.port}/records`);
-    url.searchParams.set("docker_host", dockerHost);
+    url.searchParams.set("docker_host", sump.dockerHost);
     for (const [key, paramName] of Object.entries(RECORDS_PARAM_KEYS)) {
       const value = params[key as keyof RecordsQueryParams];
       if (value !== undefined) url.searchParams.set(paramName, String(value));
@@ -295,7 +337,7 @@ export function registerIpcHandlers(
       sumpId: params.sumpId,
       dataStreamId: params.dataStreamId,
       exportPath: "/recordings/export",
-      exportParams: { docker_host: params.dockerHost, start: params.start, end: params.end },
+      exportParams: { start: params.start, end: params.end },
       fileExt: ".recording",
       kind: "recording",
       projectPath: params.projectPath,
@@ -309,7 +351,6 @@ export function registerIpcHandlers(
       dataStreamId: params.dataStreamId,
       exportPath: "/tracks/export",
       exportParams: {
-        docker_host: params.dockerHost,
         metric: params.metric,
         container_id: params.containerId,
         start: params.start,
@@ -517,6 +558,60 @@ export function registerIpcHandlers(
         onLog: (line) => console.error(`[install-remote] ${line}`),
       });
       return catalog.getSump(id);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  // cor-CORE.PROVISION-007: the switcher UI's four backing actions --
+  // which Sump is primary, rename, and uninstall/disconnect (dispatched
+  // per connectionType by uninstallSump). Reuses the same
+  // mkdirSync+Catalog+try/finally pattern as every other handler above.
+  electronApi.ipcMain.handle("get-primary-sump-id", async () => {
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      return catalog.getPrimarySumpId();
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("select-primary-sump", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { sumpId: string }];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      const sump = catalog.getSump(params.sumpId);
+      if (!sump) throw new Error(`no sump ${params.sumpId} in catalog`);
+      if (sump.status === "retired") throw new Error(`sump ${params.sumpId} is retired`);
+      catalog.setPrimarySumpId(params.sumpId);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("rename-sump", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { sumpId: string; name: string }];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      catalog.renameSump(params.sumpId, params.name);
+      return catalog.getSump(params.sumpId);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("uninstall-sump", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { sumpId: string }];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      await uninstallSump(catalog, params.sumpId, {
+        spawnFn,
+        onLog: (line) => console.error(`[uninstall] ${line}`),
+      });
     } finally {
       catalog.close();
     }
