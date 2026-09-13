@@ -13,9 +13,10 @@ Input: $ARGUMENTS
 3. Read `<file>` and identify its distinct items, the same way
    `/roadmap-add` would.
 4. For each item: if it matches an existing row by title/description
-   similarity, update that row's `Title`/`Notes` (ask the user rather
-   than guessing when a match is ambiguous); if it's new, add a row with
-   the next global `RM-NNNNNN` ID (`Status: Not triaged`, `Linked: *(none)*`).
+   similarity, update that row's `Title`/`Description`/`Notes` (ask the
+   user rather than guessing when a match is ambiguous); if it's new,
+   add a row with the next global `RM-NNNNNN` ID (its own `Description`,
+   same rule as `/roadmap-add`; `Status: Not triaged`, `Linked: *(none)*`).
 5. Flag — in `Notes`, never by deleting — any existing row whose item no
    longer appears in `<file>`.
 6. Update the file's `Source` and `Last updated` fields.

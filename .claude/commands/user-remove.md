@@ -8,9 +8,10 @@ Input: $ARGUMENTS
 
 1. If `<name>` has no entry in `.criterion/IAM/users/users.json`,
    refuse with a clear message.
-2. If `<name>` is the only entry with `"active": true`, warn that this
-   would leave the project with zero active users (hard rule, INV-16) and
-   ask for confirmation, or suggest `/user-add` for a replacement first.
+2. If `<name>` is the only entry with `"active": true`, refuse — this
+   would leave the project with zero active users (hard rule, INV-16,
+   INV-25's fundamental-invariant exception to acting without asking) —
+   and point at `/user-add` for a replacement first.
 3. Otherwise set that entry's `active` field to `false` — **never delete
    the entry**, since existing `Signed-off-by` references on already-signed
    artifacts must stay resolvable.

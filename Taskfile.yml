@@ -17,10 +17,28 @@
 
 version: "3"
 
+vars:
+  # Copied from this deployment's *.catalyst pointer's agent-source
+  # field (INV-6) — Task resolves includes.taskfile paths before dynamic
+  # (sh:) vars are evaluated, so this must be a literal, not computed.
+  # Update by hand (or via /sync-framework) if agent-source ever changes.
+  CRITERION_DIR: "/Users/oliviersteck/.claude/projects/-Users-oliviersteck-sources-correlator/criterion"
+  # Resolves the deployed agent's CLI binary from the pointer's "agent"
+  # field. Safe to compute dynamically -- only CRITERION_DIR feeds an
+  # includes: path.
+  AGENT_ID:
+    sh: |
+      f=$(ls *.catalyst 2>/dev/null | head -1)
+      [ -n "$f" ] && grep -oE '"agent"[[:space:]]*:[[:space:]]*"[^"]*"' "$f" | head -1 | sed -E 's/.*"([^"]*)"$/\1/'
+  AGENT_BIN: '{{if eq .AGENT_ID "claude-code"}}claude{{else if .AGENT_ID}}{{.AGENT_ID}}{{else}}claude{{end}}'
+  AGENT_CMD: '{{.AGENT_CMD_OVERRIDE | default (printf "%s -p" .AGENT_BIN)}}'
+
 includes:
   common:
-    taskfile: ./Taskfile.common.yml
+    taskfile: '{{.CRITERION_DIR}}/Taskfile.common.yml'
     flatten: true
+    vars:
+      AGENT_CMD: '{{.AGENT_CMD}}'
   app:
     taskfile: ./app/Taskfile.yml
     dir: ./app

@@ -5,7 +5,7 @@ argument-hint: <name> <file>
 
 Ingest a new named roadmap from a local file. Full spec:
 `.criterion/CODE-OF-CONDUCT.md` §4, template:
-`.criterion/development/roadmaps/templates/TEMPLATE-ROADMAP-v1.md`.
+`.criterion/development/roadmaps/templates/TEMPLATE-ROADMAP-v2.md`.
 Input: $ARGUMENTS
 
 1. Parse `$ARGUMENTS` as `<name> <file>`. If either is missing, ask for it.
@@ -19,10 +19,12 @@ Input: $ARGUMENTS
    number — never guess or reuse.
 5. Resolve who is signing this (per `CODE-OF-CONDUCT.md` §2) and create
    `.criterion/development/roadmaps/<name>.md` from
-   `.criterion/development/roadmaps/templates/TEMPLATE-ROADMAP-v1.md`, with
+   `.criterion/development/roadmaps/templates/TEMPLATE-ROADMAP-v2.md`, with
    `Name: <name>`, `Source: <file>`, `Added`/`Last updated` set to today,
-   and one row per identified item (`Status: Not triaged`,
-   `Linked: *(none)*`, `Signed-off-by` set to the resolved user).
+   and one row per identified item (`Description` a sentence or two
+   summarizing the item, drawn from `<file>` — not a restatement of
+   `Title`; `Status: Not triaged`, `Linked: *(none)*`, `Signed-off-by`
+   set to the resolved user).
 6. Register `<name>` in `.criterion/development/roadmaps/roadmaps.md`.
 7. Append a journal entry per `CODE-OF-CONDUCT.md` §9 /
    `rules/Rules-of-Rules.md` §12 (`action: "create"`, `targets: []` —
