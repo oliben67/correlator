@@ -3,6 +3,7 @@ import { AddSump } from "./AddSump.js";
 import { Correlate } from "./Correlate.js";
 import type { SumpSummary } from "./correlator-api.js";
 import { SumpSwitcher } from "./SumpSwitcher.js";
+import { isCorrelatable, resolveActiveSump, selectableSumps } from "./sumpSelection.js";
 
 export function App() {
   const [sumps, setSumps] = useState<SumpSummary[] | null>(null);
@@ -27,35 +28,23 @@ export function App() {
   // confusing permanent row where the "Add Sump" chooser belongs.
   const liveSumps = sumps?.filter((sump) => sump.status !== "retired") ?? null;
 
-  // cor-CORE.PROVISION-008: correlator has one addressable concept, the
-  // log Sump -- a root Sump with a discovered host is hidden here, only
-  // its host-scoped children are selectable; a root with no discovered
-  // hosts yet stays selectable so a just-connected Sump never shows a
-  // blank screen.
-  const selectableSumps =
-    liveSumps?.filter(
-      (sump) =>
-        sump.parentSumpId !== null || !liveSumps.some((other) => other.parentSumpId === sump.id),
-    ) ?? null;
-
-  // cor-CORE.PROVISION-007: the primary Sump if one is selected and still
-  // selectable, else the first selectable Sump -- a UI-selection concept,
-  // distinct from SumpState's "active" (reachability).
-  const activeSump =
-    selectableSumps?.find((sump) => sump.id === primaryId) ?? selectableSumps?.[0] ?? null;
+  const selectable = liveSumps === null ? null : selectableSumps(liveSumps);
+  const activeSump = selectable === null ? null : resolveActiveSump(selectable, primaryId);
 
   return (
     <div>
       <h1>correlator</h1>
       {error && <p role="alert">{error}</p>}
-      {selectableSumps === null && !error && <p>Loading sumps…</p>}
-      {selectableSumps !== null && selectableSumps.length === 0 && (
-        <AddSump onSumpAdded={refresh} />
-      )}
-      {selectableSumps !== null && selectableSumps.length > 0 && (
+      {selectable === null && !error && <p>Loading sumps…</p>}
+      {selectable !== null && selectable.length === 0 && <AddSump onSumpAdded={refresh} />}
+      {selectable !== null && selectable.length > 0 && (
         <>
-          <SumpSwitcher sumps={selectableSumps} primaryId={primaryId} onChange={refresh} />
-          {activeSump && <Correlate sumpId={activeSump.id} />}
+          <SumpSwitcher sumps={selectable} primaryId={primaryId} onChange={refresh} />
+          {isCorrelatable(activeSump) ? (
+            <Correlate sumpId={activeSump.id} />
+          ) : (
+            activeSump && <p>{activeSump.name} isn't reporting from any docker host yet.</p>
+          )}
         </>
       )}
     </div>
