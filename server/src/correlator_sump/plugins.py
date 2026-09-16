@@ -178,3 +178,21 @@ class PluginManager:
         self._pm.register(plugin, name=name)
         if name is not None:
             self.loaded_plugin_names.append(name)
+
+
+def validate_plugin_routes(app: Any) -> None:
+    """Validate routes on `app` to ensure no two routes share the same path
+    and HTTP method combination (cor-CORE.PLUGIN-002). Raises `ValueError`
+    if a route collision is detected."""
+    seen_endpoints: set[tuple[str, str]] = set()
+    for route in getattr(app, "routes", []):
+        path = getattr(route, "path", None)
+        methods = getattr(route, "methods", None)
+        if path and methods:
+            for method in methods:
+                key = (path, method.upper())
+                if key in seen_endpoints:
+                    raise ValueError(
+                        f"Plugin route conflict detected for path '{path}' and method '{method}'"
+                    )
+                seen_endpoints.add(key)

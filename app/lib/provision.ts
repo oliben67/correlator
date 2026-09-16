@@ -100,7 +100,9 @@ function sshExecArgs(target: SshTarget): string[] {
     "-o",
     "ConnectTimeout=10",
   ];
-  if (target.sshKey) args.push("-i", target.sshKey, "-o", "IdentitiesOnly=yes");
+  if (target.sshKey && target.sshKey.trim().length > 0) {
+    args.push("-i", target.sshKey.trim(), "-o", "IdentitiesOnly=yes");
+  }
   if (target.sshPort) args.push("-p", String(target.sshPort));
   args.push(target.sshTarget);
   return args;
@@ -108,7 +110,9 @@ function sshExecArgs(target: SshTarget): string[] {
 
 function scpArgs(target: SshTarget): string[] {
   const args: string[] = [];
-  if (target.sshKey) args.push("-i", target.sshKey);
+  if (target.sshKey && target.sshKey.trim().length > 0) {
+    args.push("-i", target.sshKey.trim(), "-o", "IdentitiesOnly=yes");
+  }
   if (target.sshPort) args.push("-P", String(target.sshPort));
   return args;
 }

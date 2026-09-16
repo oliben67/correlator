@@ -263,3 +263,33 @@ async def test_async_register_background_task_hook_is_awaited(monkeypatch) -> No
     await manager.discover()
 
     assert "async-fake-relay" in manager.background_task_factories
+
+
+def test_validate_plugin_routes_detects_conflict() -> None:
+    from fastapi import FastAPI
+    from correlator_sump.plugins import validate_plugin_routes
+    import pytest
+
+    app = FastAPI()
+
+    @app.get("/test")
+    def r1():
+        return {}
+
+    @app.get("/test")
+    def r2():
+        return {}
+
+    with pytest.raises(ValueError, match="Plugin route conflict detected"):
+        validate_plugin_routes(app)
+
+
+async def test_isolated_background_task_catches_unhandled_exception() -> None:
+    from correlator_sump.app import _run_isolated_background_task
+
+    async def failing_factory():
+        raise RuntimeError("Task crashed")
+
+    # Proves unhandled exception is caught and logged without raising up
+    await _run_isolated_background_task("failing-task", failing_factory)
+

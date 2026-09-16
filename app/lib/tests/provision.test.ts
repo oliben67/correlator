@@ -297,6 +297,7 @@ describe("provisionRemote / uninstallRemote", () => {
   it("persists the SSH target in catalogJson", async () => {
     vi.stubGlobal("fetch", fakeFetchOk());
     const catalog = new Catalog(dbPath);
+    const calls: string[][] = [];
     await provisionRemote(
       catalog,
       {
@@ -307,7 +308,7 @@ describe("provisionRemote / uninstallRemote", () => {
         source: { type: "registry", ref: "correlator/sump:latest", composeFile: composeOkPath },
         now: "2026-09-08T00:00:00Z",
       },
-      { spawnFn: fakeSpawn(0, []) },
+      { spawnFn: fakeSpawn(0, calls) },
     );
 
     const doc = JSON.parse(catalog.getSump("sump-2")?.catalogJson ?? "{}");
@@ -316,6 +317,15 @@ describe("provisionRemote / uninstallRemote", () => {
       sshKey: "/path/to/key",
       sshPort: 2222,
     });
+
+    const scpCalls = calls.filter((c) => c[0] === "scp");
+    for (const call of scpCalls) {
+      expect(call).toContain("-i");
+      expect(call).toContain("/path/to/key");
+      expect(call).toContain("-o");
+      expect(call).toContain("IdentitiesOnly=yes");
+    }
+
     catalog.close();
   });
 
