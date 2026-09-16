@@ -78,6 +78,24 @@ export interface TrackRow {
   createdAt: string;
 }
 
+export type EventConditionType = "metric" | "log";
+export type EventOperator = "gt" | "lt" | "eq" | "gte" | "lte";
+export type EventAction = "start_recording" | "stop_recording" | "notify";
+
+export interface EventRuleRow {
+  id: string;
+  sumpId: string;
+  name: string;
+  conditionType: EventConditionType;
+  metricName: string | null;
+  operator: EventOperator | null;
+  threshold: number | null;
+  pattern: string | null;
+  action: EventAction;
+  enabled: boolean;
+  createdAt: string;
+}
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sumps (
   id TEXT PRIMARY KEY,
@@ -140,9 +158,59 @@ CREATE TABLE IF NOT EXISTS app_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS recording_sessions (
+  id TEXT PRIMARY KEY,
+  sump_id TEXT NOT NULL REFERENCES sumps(id),
+  status TEXT NOT NULL DEFAULT 'idle',
+  started_at TEXT NOT NULL,
+  stopped_at TEXT,
+  active_segment_started_at TEXT,
+  segments_json TEXT NOT NULL DEFAULT '[]',
+  was_interrupted INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_recording_sessions_sump_id ON recording_sessions(sump_id);
+
+CREATE TABLE IF NOT EXISTS event_rules (
+  id TEXT PRIMARY KEY,
+  sump_id TEXT NOT NULL REFERENCES sumps(id),
+  name TEXT NOT NULL,
+  condition_type TEXT NOT NULL,
+  metric_name TEXT,
+  operator TEXT,
+  threshold REAL,
+  pattern TEXT,
+  action TEXT NOT NULL,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_event_rules_sump_id ON event_rules(sump_id);
 `;
 
 const PRIMARY_SUMP_ID_KEY = "primary_sump_id";
+
+export type RecordingSessionStatus = "idle" | "recording" | "paused" | "stopped";
+
+export interface RecordingSegment {
+  segmentNumber: number;
+  startedAt: string;
+  stoppedAt: string;
+  recordingId?: string;
+  filePath?: string;
+}
+
+export interface RecordingSessionRow {
+  id: string;
+  sumpId: string;
+  status: RecordingSessionStatus;
+  startedAt: string;
+  stoppedAt: string | null;
+  activeSegmentStartedAt: string | null;
+  segmentsJson: string;
+  wasInterrupted: boolean;
+  createdAt: string;
+}
 
 function sumpFromRow(row: Record<string, unknown>): SumpRow {
   return {
@@ -193,6 +261,36 @@ function trackFromRow(row: Record<string, unknown>): TrackRow {
     sumpId: row.sump_id as string,
     filePath: row.file_path as string,
     catalogJson: row.catalog_json as string,
+    createdAt: row.created_at as string,
+  };
+}
+
+function recordingSessionFromRow(row: Record<string, unknown>): RecordingSessionRow {
+  return {
+    id: row.id as string,
+    sumpId: row.sump_id as string,
+    status: row.status as RecordingSessionStatus,
+    startedAt: row.started_at as string,
+    stoppedAt: (row.stopped_at as string | null) ?? null,
+    activeSegmentStartedAt: (row.active_segment_started_at as string | null) ?? null,
+    segmentsJson: row.segments_json as string,
+    wasInterrupted: Boolean(row.was_interrupted),
+    createdAt: row.created_at as string,
+  };
+}
+
+function eventRuleFromRow(row: Record<string, unknown>): EventRuleRow {
+  return {
+    id: row.id as string,
+    sumpId: row.sump_id as string,
+    name: row.name as string,
+    conditionType: row.condition_type as EventConditionType,
+    metricName: (row.metric_name as string | null) ?? null,
+    operator: (row.operator as EventOperator | null) ?? null,
+    threshold: (row.threshold as number | null) ?? null,
+    pattern: (row.pattern as string | null) ?? null,
+    action: row.action as EventAction,
+    enabled: Boolean(row.enabled),
     createdAt: row.created_at as string,
   };
 }
@@ -286,14 +384,27 @@ export class Catalog {
     this.db.prepare("UPDATE sumps SET name = ? WHERE id = ?").run(name, id);
   }
 
+  getSetting(key: string): string | null {
+    const row = this.db
+      .prepare("SELECT value FROM app_settings WHERE key = ?")
+      .get(key) as { value: string } | undefined;
+    return row?.value ?? null;
+  }
+
+  setSetting(key: string, value: string): void {
+    this.db
+      .prepare(`
+      INSERT INTO app_settings (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `)
+      .run(key, value);
+  }
+
   /** cor-CORE.PROVISION-007: which Sump the switcher UI currently treats
    * as primary -- a UI-selection concept, distinct from `SumpState`'s
    * `"active"` (reachability). `null` until a user explicitly picks one. */
   getPrimarySumpId(): string | null {
-    const row = this.db
-      .prepare("SELECT value FROM app_settings WHERE key = ?")
-      .get(PRIMARY_SUMP_ID_KEY) as { value: string } | undefined;
-    return row?.value ?? null;
+    return this.getSetting(PRIMARY_SUMP_ID_KEY);
   }
 
   setPrimarySumpId(id: string | null): void {
@@ -301,17 +412,14 @@ export class Catalog {
       this.db.prepare("DELETE FROM app_settings WHERE key = ?").run(PRIMARY_SUMP_ID_KEY);
       return;
     }
-    this.db
-      .prepare(`
-      INSERT INTO app_settings (key, value) VALUES (?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value
-    `)
-      .run(PRIMARY_SUMP_ID_KEY, id);
+    this.setSetting(PRIMARY_SUMP_ID_KEY, id);
   }
 
   /** cor-CORE.PROVISION-008: idempotently registers one docker-host-scoped
    * logical Sump under a parent -- INSERT ... DO NOTHING so a later sync
-   * never clobbers a user's own rename of this row. */
+   * never clobbers a user's own rename of this row.
+   * cor-CORE.ARCHIVE-000003: auto-registers a matching data_streams row
+   * so download-recording IPC succeeds for logical Sumps. */
   syncLogicalSump(params: {
     id: string;
     parentSumpId: string;
@@ -338,6 +446,17 @@ export class Catalog {
         params.parentSumpId,
         params.dockerHost,
       );
+
+    this.upsertDataStream({
+      id: params.id,
+      sumpId: params.id,
+      kind: "sump",
+      sourceRef: params.dockerHost,
+      ownerUserId: null,
+      isPrivate: false,
+      catalogJson: "{}",
+      createdAt: params.createdAt,
+    });
   }
 
   /** cor-CORE.PROVISION-008: retires every logical Sump discovered under
@@ -487,5 +606,133 @@ export class Catalog {
       .prepare("SELECT * FROM tracks WHERE recording_id = ? ORDER BY created_at")
       .all(recordingId);
     return rows.map((r) => trackFromRow(r as Record<string, unknown>));
+  }
+
+  upsertRecordingSession(session: RecordingSessionRow): void {
+    this.db
+      .prepare(`
+      INSERT INTO recording_sessions (id, sump_id, status, started_at, stopped_at, active_segment_started_at, segments_json, was_interrupted, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        sump_id = excluded.sump_id,
+        status = excluded.status,
+        started_at = excluded.started_at,
+        stopped_at = excluded.stopped_at,
+        active_segment_started_at = excluded.active_segment_started_at,
+        segments_json = excluded.segments_json,
+        was_interrupted = excluded.was_interrupted
+    `)
+      .run(
+        session.id,
+        session.sumpId,
+        session.status,
+        session.startedAt,
+        session.stoppedAt,
+        session.activeSegmentStartedAt,
+        session.segmentsJson,
+        session.wasInterrupted ? 1 : 0,
+        session.createdAt,
+      );
+  }
+
+  getRecordingSession(id: string): RecordingSessionRow | null {
+    const row = this.db.prepare("SELECT * FROM recording_sessions WHERE id = ?").get(id);
+    return row ? recordingSessionFromRow(row as Record<string, unknown>) : null;
+  }
+
+  getActiveRecordingSessionForSump(sumpId: string): RecordingSessionRow | null {
+    const row = this.db
+      .prepare(
+        "SELECT * FROM recording_sessions WHERE sump_id = ? AND status IN ('recording', 'paused') ORDER BY created_at DESC LIMIT 1",
+      )
+      .get(sumpId);
+    return row ? recordingSessionFromRow(row as Record<string, unknown>) : null;
+  }
+
+  listRecordingSessionsForSump(sumpId: string): RecordingSessionRow[] {
+    const rows = this.db
+      .prepare("SELECT * FROM recording_sessions WHERE sump_id = ? ORDER BY created_at DESC")
+      .all(sumpId);
+    return rows.map((r) => recordingSessionFromRow(r as Record<string, unknown>));
+  }
+
+  coerceInterruptedSessions(): RecordingSessionRow[] {
+    const rows = this.db
+      .prepare("SELECT * FROM recording_sessions WHERE status = 'recording'")
+      .all();
+    const coerced: RecordingSessionRow[] = [];
+    for (const r of rows) {
+      const session = recordingSessionFromRow(r as Record<string, unknown>);
+      session.status = "paused";
+      session.wasInterrupted = true;
+      session.activeSegmentStartedAt = null;
+      this.upsertRecordingSession(session);
+      coerced.push(session);
+    }
+    return coerced;
+  }
+
+  getInterruptedSessions(): RecordingSessionRow[] {
+    const rows = this.db
+      .prepare("SELECT * FROM recording_sessions WHERE was_interrupted = 1 ORDER BY created_at DESC")
+      .all();
+    return rows.map((r) => recordingSessionFromRow(r as Record<string, unknown>));
+  }
+
+  clearInterruptedFlag(id: string): void {
+    this.db
+      .prepare("UPDATE recording_sessions SET was_interrupted = 0 WHERE id = ?")
+      .run(id);
+  }
+
+  upsertEventRule(rule: EventRuleRow): void {
+    this.db
+      .prepare(`
+      INSERT INTO event_rules (id, sump_id, name, condition_type, metric_name, operator, threshold, pattern, action, enabled, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        sump_id = excluded.sump_id,
+        name = excluded.name,
+        condition_type = excluded.condition_type,
+        metric_name = excluded.metric_name,
+        operator = excluded.operator,
+        threshold = excluded.threshold,
+        pattern = excluded.pattern,
+        action = excluded.action,
+        enabled = excluded.enabled
+    `)
+      .run(
+        rule.id,
+        rule.sumpId,
+        rule.name,
+        rule.conditionType,
+        rule.metricName,
+        rule.operator,
+        rule.threshold,
+        rule.pattern,
+        rule.action,
+        rule.enabled ? 1 : 0,
+        rule.createdAt,
+      );
+  }
+
+  getEventRule(id: string): EventRuleRow | null {
+    const row = this.db.prepare("SELECT * FROM event_rules WHERE id = ?").get(id);
+    return row ? eventRuleFromRow(row as Record<string, unknown>) : null;
+  }
+
+  listEventRulesForSump(sumpId: string): EventRuleRow[] {
+    const rows = this.db
+      .prepare("SELECT * FROM event_rules WHERE sump_id = ? ORDER BY created_at DESC")
+      .all(sumpId);
+    return rows.map((r) => eventRuleFromRow(r as Record<string, unknown>));
+  }
+
+  deleteEventRule(id: string): void {
+    this.db.prepare("DELETE FROM event_rules WHERE id = ?").run(id);
+  }
+
+  toggleEventRule(id: string, enabled: boolean): void {
+    this.db.prepare("UPDATE event_rules SET enabled = ? WHERE id = ?").run(enabled ? 1 : 0, id);
   }
 }

@@ -28,4 +28,21 @@ contextBridge.exposeInMainWorld("correlator", {
   selectPrimarySump: (params) => ipcRenderer.invoke("select-primary-sump", params),
   renameSump: (params) => ipcRenderer.invoke("rename-sump", params),
   uninstallSump: (params) => ipcRenderer.invoke("uninstall-sump", params),
+  // cor-CORE.ARCHIVE-000003: live recording session actions.
+  startRecordingSession: (params) => ipcRenderer.invoke("start-recording-session", params),
+  pauseRecordingSession: (params) => ipcRenderer.invoke("pause-recording-session", params),
+  resumeRecordingSession: (params) => ipcRenderer.invoke("resume-recording-session", params),
+  stopRecordingSession: (params) => ipcRenderer.invoke("stop-recording-session", params),
+  getRecordingSession: (params) => ipcRenderer.invoke("get-recording-session", params),
+  getInterruptedSessions: () => ipcRenderer.invoke("get-interrupted-sessions"),
+  dismissInterruptedSession: (params) => ipcRenderer.invoke("dismiss-interrupted-session", params),
+  // cor-CORE.EVENT-000001/-000002: event trigger actions.
+  listEventRules: (params) => ipcRenderer.invoke("list-event-rules", params),
+  createEventRule: (params) => ipcRenderer.invoke("create-event-rule", params),
+  toggleEventRule: (params) => ipcRenderer.invoke("toggle-event-rule", params),
+  deleteEventRule: (params) => ipcRenderer.invoke("delete-event-rule", params),
+  evaluateEventRules: (params) => ipcRenderer.invoke("evaluate-event-rules", params),
+  // cor-CORE.SHELL-000005: app preferences actions.
+  getPreferences: () => ipcRenderer.invoke("get-preferences"),
+  setPreferences: (updates) => ipcRenderer.invoke("set-preferences", updates),
 });

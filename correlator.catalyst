@@ -1,13 +1,13 @@
 {
   "project_name": "correlator",
-  "framework_version": "0.25.0",
-  "agent": "claude-code",
+  "framework_version": "0.27.0",
+  "agent": "copilot",
   "agent-source": "/Users/oliviersteck/.claude/projects/-Users-oliviersteck-sources-correlator/criterion",
   "repoed": true,
   "catalyst_repo": "correlator-criterion",
-  "catalyst_repo_url": "git@github.com:oliben67/correlator-criterion.git",
+  "catalyst_repo_url": "git@github.com:oliben67/catalyst-repo.git",
   "created_by": "olivier-steck",
   "criterion_branch": "olivier-steck.criterion",
   "created": "2026-08-23",
-  "updated": "2026-09-12"
+  "updated": "2026-09-14"
 }

@@ -101,6 +101,49 @@ describe("Catalog", () => {
     catalog.close();
   });
 
+  it("persists and queries event_rules for a sump", () => {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump({
+      id: "sump-1",
+      name: "local sump",
+      connectionType: "local",
+      host: null,
+      port: 8080,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-16T00:00:00Z",
+      lastSeenAt: null,
+    });
+
+    catalog.upsertEventRule({
+      id: "ev-1",
+      sumpId: "sump-1",
+      name: "CPU High",
+      conditionType: "metric",
+      metricName: "cpu_pct",
+      operator: "gt",
+      threshold: 80,
+      pattern: null,
+      action: "start_recording",
+      enabled: true,
+      createdAt: "2026-09-16T10:00:00Z",
+    });
+
+    const rules = catalog.listEventRulesForSump("sump-1");
+    expect(rules).toHaveLength(1);
+    expect(rules[0].name).toBe("CPU High");
+    expect(rules[0].enabled).toBe(true);
+
+    catalog.toggleEventRule("ev-1", false);
+    expect(catalog.getEventRule("ev-1")?.enabled).toBe(false);
+
+    catalog.deleteEventRule("ev-1");
+    expect(catalog.listEventRulesForSump("sump-1")).toHaveLength(0);
+
+    catalog.close();
+  });
+
   it("queries every track for a given [sump_id, data_stream_id] via a single indexed lookup", () => {
     const catalog = new Catalog(dbPath);
     catalog.upsertSump({

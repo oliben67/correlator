@@ -14,7 +14,15 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { getOrCreateToken, getOrCreateUserId } from "./lib/auth-token.ts";
-import { Catalog, type SumpRow } from "./lib/catalog.ts";
+import {
+  Catalog,
+  type EventAction,
+  type EventConditionType,
+  type EventOperator,
+  type EventRuleRow,
+  type RecordingSessionRow,
+  type SumpRow,
+} from "./lib/catalog.ts";
 import { transition } from "./lib/lifecycle.ts";
 import { installLocalSump, LOCAL_SUMP_ID, resolveServerResourcesDir } from "./lib/local-sump.ts";
 import {
@@ -32,6 +40,14 @@ import {
   type SpawnFn,
   uninstallSump,
 } from "./lib/provision.ts";
+import {
+  pauseRecordingSession,
+  resumeRecordingSession,
+  startRecordingSession,
+  stopRecordingSession,
+} from "./lib/recording-session.ts";
+import { evaluateEventRules, type TelemetrySample } from "./lib/events.ts";
+import { getPreferences, savePreferences, type AppPreferences } from "./lib/preferences.ts";
 
 export interface RecordsQueryParams {
   kind?: "log" | "metric" | "both";
@@ -283,6 +299,20 @@ async function downloadAndRegister(
   return { id, filePath };
 }
 
+function formatSessionSummary(session: RecordingSessionRow) {
+  return {
+    id: session.id,
+    sumpId: session.sumpId,
+    status: session.status,
+    startedAt: session.startedAt,
+    stoppedAt: session.stoppedAt,
+    activeSegmentStartedAt: session.activeSegmentStartedAt,
+    segments: JSON.parse(session.segmentsJson ?? "[]"),
+    wasInterrupted: session.wasInterrupted,
+    createdAt: session.createdAt,
+  };
+}
+
 export interface ProvisionIpcOptions {
   isPackaged?: boolean;
   resourcesPath?: string;
@@ -297,6 +327,18 @@ export function registerIpcHandlers(
   provisionOptions: ProvisionIpcOptions = {},
 ): void {
   const { isPackaged = false, resourcesPath, spawnFn = spawn } = provisionOptions;
+
+  try {
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const bootCatalog = new Catalog(catalogPath);
+    try {
+      bootCatalog.coerceInterruptedSessions();
+    } finally {
+      bootCatalog.close();
+    }
+  } catch {
+    // Best-effort boot coercion (e.g. dummy test catalog path)
+  }
 
   electronApi.ipcMain.handle("list-sumps", async () => {
     mkdirSync(dirname(catalogPath), { recursive: true });
@@ -612,6 +654,248 @@ export function registerIpcHandlers(
         spawnFn,
         onLog: (line) => console.error(`[uninstall] ${line}`),
       });
+    } finally {
+      catalog.close();
+    }
+  });
+
+  // cor-CORE.ARCHIVE-000003: live recording session IPC handlers.
+  electronApi.ipcMain.handle("start-recording-session", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { sumpId: string }];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      const session = startRecordingSession(catalog, { sumpId: params.sumpId });
+      return formatSessionSummary(session);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("pause-recording-session", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { sessionId: string }];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      const session = await pauseRecordingSession(catalog, {
+        sessionId: params.sessionId,
+        exportSegmentFn: async (sumpId, startIso, endIso) => {
+          return downloadAndRegister(catalogPath, fetchFn, userId, {
+            sumpId,
+            dataStreamId: sumpId,
+            exportPath: "/recordings/export",
+            exportParams: { start: startIso, end: endIso },
+            fileExt: ".recording",
+            kind: "recording",
+          });
+        },
+      });
+      return session ? formatSessionSummary(session) : null;
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("resume-recording-session", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { sessionId: string }];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      const session = resumeRecordingSession(catalog, { sessionId: params.sessionId });
+      return session ? formatSessionSummary(session) : null;
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("stop-recording-session", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { sessionId: string }];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      const session = await stopRecordingSession(catalog, {
+        sessionId: params.sessionId,
+        exportSegmentFn: async (sumpId, startIso, endIso) => {
+          return downloadAndRegister(catalogPath, fetchFn, userId, {
+            sumpId,
+            dataStreamId: sumpId,
+            exportPath: "/recordings/export",
+            exportParams: { start: startIso, end: endIso },
+            fileExt: ".recording",
+            kind: "recording",
+          });
+        },
+      });
+      return session ? formatSessionSummary(session) : null;
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("get-recording-session", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { sumpId: string }];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      const session = catalog.getActiveRecordingSessionForSump(params.sumpId);
+      return session ? formatSessionSummary(session) : null;
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("get-interrupted-sessions", async () => {
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      const sessions = catalog.getInterruptedSessions();
+      return sessions.map(formatSessionSummary);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("dismiss-interrupted-session", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { sessionId: string }];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      catalog.clearInterruptedFlag(params.sessionId);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  // cor-CORE.EVENT-000001/-000002: event triggers & evaluation IPC handlers.
+  electronApi.ipcMain.handle("list-event-rules", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { sumpId: string }];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      return catalog.listEventRulesForSump(params.sumpId);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("create-event-rule", async (...args: unknown[]) => {
+    const [, params] = args as [
+      unknown,
+      {
+        sumpId: string;
+        name: string;
+        conditionType: EventConditionType;
+        metricName?: string;
+        operator?: EventOperator;
+        threshold?: number;
+        pattern?: string;
+        action: EventAction;
+      },
+    ];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    const id = `ev_${randomUUID()}`;
+    const rule: EventRuleRow = {
+      id,
+      sumpId: params.sumpId,
+      name: params.name,
+      conditionType: params.conditionType,
+      metricName: params.metricName ?? null,
+      operator: params.operator ?? null,
+      threshold: params.threshold ?? null,
+      pattern: params.pattern ?? null,
+      action: params.action,
+      enabled: true,
+      createdAt: new Date().toISOString(),
+    };
+    try {
+      catalog.upsertEventRule(rule);
+      return catalog.getEventRule(id);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("toggle-event-rule", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { ruleId: string; enabled: boolean }];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      catalog.toggleEventRule(params.ruleId, params.enabled);
+      return catalog.getEventRule(params.ruleId);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("delete-event-rule", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { ruleId: string }];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      catalog.deleteEventRule(params.ruleId);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("evaluate-event-rules", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { sumpId: string; samples: TelemetrySample[] }];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      const rules = catalog.listEventRulesForSump(params.sumpId);
+      const results = evaluateEventRules(rules, params.samples);
+
+      // Perform automated actions (start/stop recording sessions)
+      for (const res of results) {
+        if (res.triggered) {
+          if (res.action === "start_recording") {
+            startRecordingSession(catalog, { sumpId: params.sumpId });
+          } else if (res.action === "stop_recording") {
+            const active = catalog.getActiveRecordingSessionForSump(params.sumpId);
+            if (active) {
+              await stopRecordingSession(catalog, {
+                sessionId: active.id,
+                exportSegmentFn: async (sumpId, startIso, endIso) => {
+                  return downloadAndRegister(catalogPath, fetchFn, userId, {
+                    sumpId,
+                    dataStreamId: sumpId,
+                    exportPath: "/recordings/export",
+                    exportParams: { start: startIso, end: endIso },
+                    fileExt: ".recording",
+                    kind: "recording",
+                  });
+                },
+              });
+            }
+          }
+        }
+      }
+
+      return results;
+    } finally {
+      catalog.close();
+    }
+  });
+
+  // cor-CORE.SHELL-000005: preferences management IPC.
+  electronApi.ipcMain.handle("get-preferences", async () => {
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      return getPreferences(catalog);
+    } finally {
+      catalog.close();
+    }
+  });
+
+  electronApi.ipcMain.handle("set-preferences", async (...args: unknown[]) => {
+    const [, updates] = args as [unknown, Partial<AppPreferences>];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      return savePreferences(catalog, updates);
     } finally {
       catalog.close();
     }

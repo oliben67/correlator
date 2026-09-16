@@ -8,8 +8,9 @@ Input: $ARGUMENTS
 
 1. Read `.criterion/development/bugs/bugs.md` and list
    `.criterion/development/bugs/` to find the highest existing
-   `BUG-NNNNNN` (4-digit, zero-padded). The new ID is the next number
-   (`0001` if none exist yet).
+   `BUG-NNNNNN` (6-digit, zero-padded). The new ID is the next number
+   (`000001` if none exist yet), with the signer's `userid` appended as
+   its suffix once resolved in step 4 (`rules/Rules-of-Rules.md` §20).
 2. Determine the target rule(s): a bug is **never** allowed with an empty
    `Targets` field (`CODE-OF-CONDUCT.md` §1). If the user's arguments don't
    name an existing rule ID, ask which rule this bug violates — do not
@@ -17,8 +18,8 @@ Input: $ARGUMENTS
    a requirement or house-keeping item instead, not a bug; say so.
 3. Determine `Domain` from the targeted rule's domain code
    (`.criterion/rules/domains/domains.md`) — never free text.
-4. Copy `.criterion/development/bugs/templates/TEMPLATE-BUG-v1.md` to
-   `.criterion/development/bugs/BUG-NNNNNN-<short-kebab-summary>.md`
+4. Copy `.criterion/development/bugs/templates/TEMPLATE-BUG-v2.md` to
+   `.criterion/development/bugs/BUG-NNNNNN-<userid>-<short-kebab-summary>.md`
    (descriptive filename, not the bare ID — `CODE-OF-CONDUCT.md` §5) and
    fill in every field: ID, filename, Status (`open`), Severity (ask if not
    given — required, no default), Opened (today), Targets, Domain, Area,

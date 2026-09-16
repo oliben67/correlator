@@ -158,6 +158,65 @@ export interface UninstallSumpParams {
   sumpId: string;
 }
 
+export interface RecordingSegmentSummary {
+  segmentNumber: number;
+  startedAt: string;
+  stoppedAt: string;
+  recordingId?: string;
+  filePath?: string;
+}
+
+export interface RecordingSessionSummary {
+  id: string;
+  sumpId: string;
+  status: "idle" | "recording" | "paused" | "stopped";
+  startedAt: string;
+  stoppedAt: string | null;
+  activeSegmentStartedAt: string | null;
+  segments: RecordingSegmentSummary[];
+  wasInterrupted: boolean;
+  createdAt: string;
+}
+
+export interface EventRuleSummary {
+  id: string;
+  sumpId: string;
+  name: string;
+  conditionType: "metric" | "log";
+  metricName: string | null;
+  operator: "gt" | "lt" | "eq" | "gte" | "lte" | null;
+  threshold: number | null;
+  pattern: string | null;
+  action: "start_recording" | "stop_recording" | "notify";
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface CreateEventRuleParams {
+  sumpId: string;
+  name: string;
+  conditionType: "metric" | "log";
+  metricName?: string;
+  operator?: "gt" | "lt" | "eq" | "gte" | "lte";
+  threshold?: number;
+  pattern?: string;
+  action: "start_recording" | "stop_recording" | "notify";
+}
+
+export interface RuleEvaluationSummary {
+  ruleId: string;
+  ruleName: string;
+  action: string;
+  triggered: boolean;
+  matchingSamples: unknown[];
+}
+
+export interface AppPreferencesSummary {
+  defaultQueryLimit: number;
+  autoRefreshIntervalSeconds: number;
+  theme: "light" | "dark" | "system";
+}
+
 export interface CorrelatorApi {
   listSumps: () => Promise<SumpSummary[]>;
   queryRecords: (sumpId: string, params?: RecordsQueryParams) => Promise<RecordsPage>;
@@ -174,6 +233,23 @@ export interface CorrelatorApi {
   selectPrimarySump: (params: SelectPrimarySumpParams) => Promise<void>;
   renameSump: (params: RenameSumpParams) => Promise<SumpSummary>;
   uninstallSump: (params: UninstallSumpParams) => Promise<void>;
+  // cor-CORE.ARCHIVE-000003: live recording session operations
+  startRecordingSession: (params: { sumpId: string }) => Promise<RecordingSessionSummary>;
+  pauseRecordingSession: (params: { sessionId: string }) => Promise<RecordingSessionSummary | null>;
+  resumeRecordingSession: (params: { sessionId: string }) => Promise<RecordingSessionSummary | null>;
+  stopRecordingSession: (params: { sessionId: string }) => Promise<RecordingSessionSummary | null>;
+  getRecordingSession: (params: { sumpId: string }) => Promise<RecordingSessionSummary | null>;
+  getInterruptedSessions: () => Promise<RecordingSessionSummary[]>;
+  dismissInterruptedSession: (params: { sessionId: string }) => Promise<void>;
+  // cor-CORE.EVENT-000001/-000002: event trigger operations
+  listEventRules: (params: { sumpId: string }) => Promise<EventRuleSummary[]>;
+  createEventRule: (params: CreateEventRuleParams) => Promise<EventRuleSummary>;
+  toggleEventRule: (params: { ruleId: string; enabled: boolean }) => Promise<EventRuleSummary>;
+  deleteEventRule: (params: { ruleId: string }) => Promise<void>;
+  evaluateEventRules: (params: { sumpId: string; samples: unknown[] }) => Promise<RuleEvaluationSummary[]>;
+  // cor-CORE.SHELL-000005: app preferences operations
+  getPreferences: () => Promise<AppPreferencesSummary>;
+  setPreferences: (updates: Partial<AppPreferencesSummary>) => Promise<AppPreferencesSummary>;
 }
 
 declare global {

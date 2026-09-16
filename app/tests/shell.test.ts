@@ -1061,3 +1061,232 @@ describe("cor-CORE.PROVISION-008: docker-host-scoped logical sumps", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe("cor-CORE.ARCHIVE-000003: live recording session IPC handlers", () => {
+  function findHandler(channel: string): (...args: unknown[]) => Promise<unknown> {
+    return (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === channel,
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+  }
+
+  it("handles start, get, pause, resume, stop recording sessions via IPC", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    const { Catalog } = await import("../lib/catalog.ts");
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "sump-1",
+      name: "local",
+      connectionType: "logical",
+      host: "127.0.0.1",
+      port: 8765,
+      status: "active",
+      authToken: null,
+      catalogJson: "{}",
+      createdAt: "2026-09-16T00:00:00Z",
+      lastSeenAt: null,
+      dockerHost: "sump-1",
+    });
+    seeded.upsertDataStream({
+      id: "sump-1",
+      sumpId: "sump-1",
+      kind: "sump",
+      sourceRef: "sump-1",
+      ownerUserId: null,
+      isPrivate: false,
+      catalogJson: "{}",
+      createdAt: "2026-09-16T00:00:00Z",
+    });
+    seeded.close();
+
+    const fakeFetch = vi.fn(
+      async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 }),
+    ) as unknown as typeof fetch;
+
+    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+
+    // Start
+    const started = (await findHandler("start-recording-session")(null, {
+      sumpId: "sump-1",
+    })) as { id: string; status: string };
+    expect(started.status).toBe("recording");
+
+    // Get active
+    const active = (await findHandler("get-recording-session")(null, {
+      sumpId: "sump-1",
+    })) as { id: string; status: string };
+    expect(active?.id).toBe(started.id);
+
+    // Pause (flushes segment)
+    const paused = (await findHandler("pause-recording-session")(null, {
+      sessionId: started.id,
+    })) as { status: string; segments: unknown[] };
+    expect(paused?.status).toBe("paused");
+    expect(paused?.segments).toHaveLength(1);
+
+    // Resume
+    const resumed = (await findHandler("resume-recording-session")(null, {
+      sessionId: started.id,
+    })) as { status: string };
+    expect(resumed?.status).toBe("recording");
+
+    // Stop
+    const stopped = (await findHandler("stop-recording-session")(null, {
+      sessionId: started.id,
+    })) as { status: string; segments: unknown[] };
+    expect(stopped?.status).toBe("stopped");
+    expect(stopped?.segments).toHaveLength(2);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("coerces crashed recording sessions on boot and returns them via get-interrupted-sessions", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    const { Catalog } = await import("../lib/catalog.ts");
+    const { startRecordingSession } = await import("../lib/recording-session.ts");
+
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "sump-1",
+      name: "local",
+      connectionType: "local",
+      host: "127.0.0.1",
+      port: 8765,
+      status: "active",
+      authToken: null,
+      catalogJson: "{}",
+      createdAt: "2026-09-16T00:00:00Z",
+      lastSeenAt: null,
+    });
+    startRecordingSession(seeded, { sumpId: "sump-1" });
+    seeded.close();
+
+    // Re-register IPC handlers (simulates app boot)
+    registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+
+    const interrupted = (await findHandler("get-interrupted-sessions")()) as Array<{
+      id: string;
+      status: string;
+      wasInterrupted: boolean;
+    }>;
+
+    expect(interrupted).toHaveLength(1);
+    expect(interrupted[0].status).toBe("paused");
+    expect(interrupted[0].wasInterrupted).toBe(true);
+
+    // Dismiss
+    await findHandler("dismiss-interrupted-session")(null, { sessionId: interrupted[0].id });
+    const remaining = (await findHandler("get-interrupted-sessions")()) as Array<unknown>;
+    expect(remaining).toHaveLength(0);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("cor-CORE.EVENT-000001/-000002: event triggers IPC handlers", () => {
+  function findHandler(channel: string): (...args: unknown[]) => Promise<unknown> {
+    return (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === channel,
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+  }
+
+  it("handles event rule CRUD and evaluation via IPC", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    const { Catalog } = await import("../lib/catalog.ts");
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "sump-1",
+      name: "local",
+      connectionType: "logical",
+      host: "127.0.0.1",
+      port: 8765,
+      status: "active",
+      authToken: null,
+      catalogJson: "{}",
+      createdAt: "2026-09-16T00:00:00Z",
+      lastSeenAt: null,
+      dockerHost: "sump-1",
+    });
+    seeded.close();
+
+    registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+
+    // Create Rule
+    const created = (await findHandler("create-event-rule")(null, {
+      sumpId: "sump-1",
+      name: "High CPU Trigger",
+      conditionType: "metric",
+      metricName: "cpu_pct",
+      operator: "gt",
+      threshold: 75,
+      action: "notify",
+    })) as { id: string; name: string };
+
+    expect(created.name).toBe("High CPU Trigger");
+
+    // List Rules
+    const rules = (await findHandler("list-event-rules")(null, { sumpId: "sump-1" })) as Array<{
+      id: string;
+      enabled: boolean;
+    }>;
+    expect(rules).toHaveLength(1);
+    expect(rules[0].enabled).toBe(true);
+
+    // Toggle Rule
+    const toggled = (await findHandler("toggle-event-rule")(null, {
+      ruleId: created.id,
+      enabled: false,
+    })) as { enabled: boolean };
+    expect(toggled.enabled).toBe(false);
+
+    // Evaluate Rules
+    const evals = (await findHandler("evaluate-event-rules")(null, {
+      sumpId: "sump-1",
+      samples: [{ kind: "metric", ts: "2026-09-16T10:00:00Z", cpu_pct: 90, docker_host: "sump-1" }],
+    })) as Array<{ triggered: boolean }>;
+    expect(evals).toHaveLength(1);
+    expect(evals[0].triggered).toBe(false); // Because disabled
+
+    // Delete Rule
+    await findHandler("delete-event-rule")(null, { ruleId: created.id });
+    const remaining = (await findHandler("list-event-rules")(null, {
+      sumpId: "sump-1",
+    })) as Array<unknown>;
+    expect(remaining).toHaveLength(0);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("cor-CORE.SHELL-000005: app preferences IPC handlers", () => {
+  function findHandler(channel: string): (...args: unknown[]) => Promise<unknown> {
+    return (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === channel,
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+  }
+
+  it("handles get-preferences and set-preferences via IPC", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+
+    registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+
+    const initial = (await findHandler("get-preferences")()) as { defaultQueryLimit: number };
+    expect(initial.defaultQueryLimit).toBe(100);
+
+    const updated = (await findHandler("set-preferences")(null, {
+      defaultQueryLimit: 300,
+      theme: "dark",
+    })) as { defaultQueryLimit: number; theme: string };
+
+    expect(updated.defaultQueryLimit).toBe(300);
+    expect(updated.theme).toBe("dark");
+
+    const reRead = (await findHandler("get-preferences")()) as { defaultQueryLimit: number };
+    expect(reRead.defaultQueryLimit).toBe(300);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
