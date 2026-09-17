@@ -164,10 +164,7 @@ export async function stopRecordingSession(
   return session;
 }
 
-export function getRecordingSession(
-  catalog: Catalog,
-  id: string,
-): RecordingSessionRow | null {
+export function getRecordingSession(catalog: Catalog, id: string): RecordingSessionRow | null {
   return catalog.getRecordingSession(id);
 }
 

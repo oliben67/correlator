@@ -50,10 +50,7 @@ export function savePreferences(
   updates: Partial<AppPreferences>,
 ): AppPreferences {
   if (updates.defaultQueryLimit !== undefined) {
-    catalog.setSetting(
-      `${PREF_KEY_PREFIX}defaultQueryLimit`,
-      String(updates.defaultQueryLimit),
-    );
+    catalog.setSetting(`${PREF_KEY_PREFIX}defaultQueryLimit`, String(updates.defaultQueryLimit));
   }
 
   if (updates.autoRefreshIntervalSeconds !== undefined) {

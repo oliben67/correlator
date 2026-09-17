@@ -84,9 +84,7 @@ def create_app(
         await plugin_manager.discover()
         server = await run_ingest_server(adapter, port=ingest_port)
         background_tasks = [
-            asyncio.create_task(
-                _run_isolated_background_task(name, factory), name=name
-            )
+            asyncio.create_task(_run_isolated_background_task(name, factory), name=name)
             for name, factory in plugin_manager.background_task_factories.items()
         ]
         async with server:

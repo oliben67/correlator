@@ -236,7 +236,9 @@ export interface CorrelatorApi {
   // cor-CORE.ARCHIVE-000003: live recording session operations
   startRecordingSession: (params: { sumpId: string }) => Promise<RecordingSessionSummary>;
   pauseRecordingSession: (params: { sessionId: string }) => Promise<RecordingSessionSummary | null>;
-  resumeRecordingSession: (params: { sessionId: string }) => Promise<RecordingSessionSummary | null>;
+  resumeRecordingSession: (params: {
+    sessionId: string;
+  }) => Promise<RecordingSessionSummary | null>;
   stopRecordingSession: (params: { sessionId: string }) => Promise<RecordingSessionSummary | null>;
   getRecordingSession: (params: { sumpId: string }) => Promise<RecordingSessionSummary | null>;
   getInterruptedSessions: () => Promise<RecordingSessionSummary[]>;
@@ -246,7 +248,10 @@ export interface CorrelatorApi {
   createEventRule: (params: CreateEventRuleParams) => Promise<EventRuleSummary>;
   toggleEventRule: (params: { ruleId: string; enabled: boolean }) => Promise<EventRuleSummary>;
   deleteEventRule: (params: { ruleId: string }) => Promise<void>;
-  evaluateEventRules: (params: { sumpId: string; samples: unknown[] }) => Promise<RuleEvaluationSummary[]>;
+  evaluateEventRules: (params: {
+    sumpId: string;
+    samples: unknown[];
+  }) => Promise<RuleEvaluationSummary[]>;
   // cor-CORE.SHELL-000005: app preferences operations
   getPreferences: () => Promise<AppPreferencesSummary>;
   setPreferences: (updates: Partial<AppPreferencesSummary>) => Promise<AppPreferencesSummary>;

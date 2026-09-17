@@ -6,7 +6,14 @@ export function AboutDialog() {
         Multi-source Telemetry & Log Correlation Platform
       </p>
 
-      <div style={{ background: "#f8f9fa", padding: "12px", borderRadius: "4px", border: "1px solid #ddd" }}>
+      <div
+        style={{
+          background: "#f8f9fa",
+          padding: "12px",
+          borderRadius: "4px",
+          border: "1px solid #ddd",
+        }}
+      >
         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.9em" }}>
           <tbody>
             <tr>

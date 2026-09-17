@@ -69,7 +69,7 @@ describe("RecordingSessionManager", () => {
       lastSeenAt: null,
     });
 
-    const session = startRecordingSession(catalog, {
+    startRecordingSession(catalog, {
       id: "sess-1",
       sumpId: "sump-1",
       now: "2026-09-16T10:00:00Z",
@@ -129,7 +129,7 @@ describe("RecordingSessionManager", () => {
       lastSeenAt: null,
     });
 
-    const session = startRecordingSession(catalog, {
+    startRecordingSession(catalog, {
       id: "sess-1",
       sumpId: "sump-1",
       now: "2026-09-16T10:00:00Z",

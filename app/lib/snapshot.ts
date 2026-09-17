@@ -2,7 +2,6 @@
  * Telemetry snapshot capture and format helpers (cor-CORE.EXPORT-000001/-000002).
  */
 
-import { randomUUID } from "node:crypto";
 import type { SumpRecord } from "../renderer/src/correlator-api.d.ts";
 
 export interface Snapshot {
@@ -33,7 +32,7 @@ export function capturePointInTimeSnapshot(
   });
 
   return {
-    id: `snap_${randomUUID()}`,
+    id: `snap_${crypto.randomUUID()}`,
     sumpId,
     startIso,
     endIso,
@@ -57,7 +56,7 @@ export function captureRangeSnapshot(
   });
 
   return {
-    id: `snap_${randomUUID()}`,
+    id: `snap_${crypto.randomUUID()}`,
     sumpId,
     startIso,
     endIso,

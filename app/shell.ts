@@ -23,8 +23,10 @@ import {
   type RecordingSessionRow,
   type SumpRow,
 } from "./lib/catalog.ts";
+import { evaluateEventRules, type TelemetrySample } from "./lib/events.ts";
 import { transition } from "./lib/lifecycle.ts";
 import { installLocalSump, LOCAL_SUMP_ID, resolveServerResourcesDir } from "./lib/local-sump.ts";
+import { type AppPreferences, getPreferences, savePreferences } from "./lib/preferences.ts";
 import {
   addReference,
   defaultProjectPath,
@@ -46,8 +48,6 @@ import {
   startRecordingSession,
   stopRecordingSession,
 } from "./lib/recording-session.ts";
-import { evaluateEventRules, type TelemetrySample } from "./lib/events.ts";
-import { getPreferences, savePreferences, type AppPreferences } from "./lib/preferences.ts";
 
 export interface RecordsQueryParams {
   kind?: "log" | "metric" | "both";

@@ -5,7 +5,7 @@ import { BootSplash } from "./BootSplash.js";
 import { Correlate } from "./Correlate.js";
 import type { SumpSummary } from "./correlator-api.js";
 import { Preferences } from "./Preferences.js";
-import { NavView, Sidebar } from "./Sidebar.js";
+import { type NavView, Sidebar } from "./Sidebar.js";
 import { StatusBar } from "./StatusBar.js";
 import { SumpSwitcher } from "./SumpSwitcher.js";
 import { isCorrelatable, resolveActiveSump, selectableSumps } from "./sumpSelection.js";
@@ -47,7 +47,11 @@ export function App() {
         <Sidebar activeView={activeNav} onViewChange={setActiveNav} />
 
         <main style={{ flex: 1, padding: "16px", overflowY: "auto", background: "#ffffff" }}>
-          {error && <p role="alert" style={{ color: "#dc3545" }}>{error}</p>}
+          {error && (
+            <p role="alert" style={{ color: "#dc3545" }}>
+              {error}
+            </p>
+          )}
 
           {selectable !== null && selectable.length === 0 ? (
             <AddSump onSumpAdded={refresh} />
@@ -59,9 +63,7 @@ export function App() {
                   {isCorrelatable(activeSump) ? (
                     <Correlate sumpId={activeSump.id} />
                   ) : (
-                    activeSump && (
-                      <p>{activeSump.name} isn't reporting from any docker host yet.</p>
-                    )
+                    activeSump && <p>{activeSump.name} isn't reporting from any docker host yet.</p>
                   )}
                 </div>
               )}

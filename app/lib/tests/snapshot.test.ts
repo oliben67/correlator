@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
+import type { SumpRecord } from "../../renderer/src/correlator-api.d.ts";
 import {
   capturePointInTimeSnapshot,
   captureRangeSnapshot,
   formatSnapshotJson,
   formatSnapshotRaw,
 } from "../snapshot.ts";
-import type { SumpRecord } from "../../renderer/src/correlator-api.d.ts";
 
 describe("Snapshot helpers", () => {
   const mockRecords: SumpRecord[] = [

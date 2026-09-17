@@ -90,7 +90,10 @@ export function Preferences() {
 
         <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
           <span>Appearance Theme:</span>
-          <select value={theme} onChange={(e) => setTheme(e.target.value as "light" | "dark" | "system")}>
+          <select
+            value={theme}
+            onChange={(e) => setTheme(e.target.value as "light" | "dark" | "system")}
+          >
             <option value="system">System Default</option>
             <option value="dark">Dark Theme</option>
             <option value="light">Light Theme</option>

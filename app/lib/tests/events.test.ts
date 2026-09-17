@@ -24,12 +24,22 @@ describe("RollingBuffer", () => {
   it("filters samples in a sliding time window", () => {
     const buffer = new RollingBuffer<TelemetrySample>(10);
     const nowMs = 100000;
-    buffer.add({ kind: "log", ts: new Date(nowMs - 50000).toISOString(), message: "m1", docker_host: "h1" });
-    buffer.add({ kind: "log", ts: new Date(nowMs - 10000).toISOString(), message: "m2", docker_host: "h1" });
+    buffer.add({
+      kind: "log",
+      ts: new Date(nowMs - 50000).toISOString(),
+      message: "m1",
+      docker_host: "h1",
+    });
+    buffer.add({
+      kind: "log",
+      ts: new Date(nowMs - 10000).toISOString(),
+      message: "m2",
+      docker_host: "h1",
+    });
 
     const inWindow = buffer.getSamplesInWindow(20000, nowMs);
     expect(inWindow).toHaveLength(1);
-    expect(inWindow[0].message).toBe("m2");
+    expect(inWindow[0].kind === "log" && inWindow[0].message).toBe("m2");
   });
 });
 
@@ -77,7 +87,12 @@ describe("evaluateEventRule", () => {
 
     const samples: TelemetrySample[] = [
       { kind: "log", ts: "2026-09-16T10:00:00Z", message: "Normal info log", docker_host: "h1" },
-      { kind: "log", ts: "2026-09-16T10:01:00Z", message: "A CRITICAL error occurred", docker_host: "h1" },
+      {
+        kind: "log",
+        ts: "2026-09-16T10:01:00Z",
+        message: "A CRITICAL error occurred",
+        docker_host: "h1",
+      },
     ];
 
     const results = evaluateEventRules([rule], samples);

@@ -69,10 +69,7 @@ export class RollingBuffer<T extends { ts: string }> {
   }
 }
 
-export function evaluateMetricCondition(
-  sample: MetricRecordSample,
-  rule: EventRuleRow,
-): boolean {
+export function evaluateMetricCondition(sample: MetricRecordSample, rule: EventRuleRow): boolean {
   if (!rule.metricName || !rule.operator || rule.threshold == null) {
     return false;
   }
@@ -99,10 +96,7 @@ export function evaluateMetricCondition(
   }
 }
 
-export function evaluateLogCondition(
-  sample: LogRecordSample,
-  rule: EventRuleRow,
-): boolean {
+export function evaluateLogCondition(sample: LogRecordSample, rule: EventRuleRow): boolean {
   if (!rule.pattern || !sample.message) {
     return false;
   }

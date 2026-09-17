@@ -385,9 +385,9 @@ export class Catalog {
   }
 
   getSetting(key: string): string | null {
-    const row = this.db
-      .prepare("SELECT value FROM app_settings WHERE key = ?")
-      .get(key) as { value: string } | undefined;
+    const row = this.db.prepare("SELECT value FROM app_settings WHERE key = ?").get(key) as
+      | { value: string }
+      | undefined;
     return row?.value ?? null;
   }
 
@@ -674,15 +674,15 @@ export class Catalog {
 
   getInterruptedSessions(): RecordingSessionRow[] {
     const rows = this.db
-      .prepare("SELECT * FROM recording_sessions WHERE was_interrupted = 1 ORDER BY created_at DESC")
+      .prepare(
+        "SELECT * FROM recording_sessions WHERE was_interrupted = 1 ORDER BY created_at DESC",
+      )
       .all();
     return rows.map((r) => recordingSessionFromRow(r as Record<string, unknown>));
   }
 
   clearInterruptedFlag(id: string): void {
-    this.db
-      .prepare("UPDATE recording_sessions SET was_interrupted = 0 WHERE id = ?")
-      .run(id);
+    this.db.prepare("UPDATE recording_sessions SET was_interrupted = 0 WHERE id = ?").run(id);
   }
 
   upsertEventRule(rule: EventRuleRow): void {

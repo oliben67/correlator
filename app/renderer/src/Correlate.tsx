@@ -19,7 +19,12 @@ import {
   toEventTimestamps,
   toLogRows,
 } from "./correlate/recordMapping.js";
-import type { EventRuleSummary, RecordingSessionSummary, RuleEvaluationSummary, SumpRecord } from "./correlator-api.js";
+import type {
+  EventRuleSummary,
+  RecordingSessionSummary,
+  RuleEvaluationSummary,
+  SumpRecord,
+} from "./correlator-api.js";
 
 // cor-CORE.CORRELATE-006: wires the correlation engine to real data.
 // cor-CORE.ARCHIVE-003: adds live recording session state control toolbar
@@ -59,7 +64,9 @@ export function Correlate({ sumpId }: { sumpId: string }) {
   const [operator, setOperator] = useState<"gt" | "lt" | "eq" | "gte" | "lte">("gt");
   const [threshold, setThreshold] = useState("80");
   const [pattern, setPattern] = useState("ERROR");
-  const [action, setAction] = useState<"start_recording" | "stop_recording" | "notify">("start_recording");
+  const [action, setAction] = useState<"start_recording" | "stop_recording" | "notify">(
+    "start_recording",
+  );
 
   const loadEventRules = useCallback(async () => {
     try {
@@ -251,9 +258,18 @@ export function Correlate({ sumpId }: { sumpId: string }) {
   return (
     <div>
       {interrupted.map((intSess) => (
-        <div key={intSess.id} role="alert" style={{ background: "#fff3cd", padding: "8px", marginBottom: "8px" }}>
-          <strong>Notice:</strong> A previous recording session ({intSess.id}) was interrupted by process restart and has been paused.
-          <button type="button" onClick={() => handleDismissInterrupted(intSess.id)} style={{ marginLeft: "12px" }}>
+        <div
+          key={intSess.id}
+          role="alert"
+          style={{ background: "#fff3cd", padding: "8px", marginBottom: "8px" }}
+        >
+          <strong>Notice:</strong> A previous recording session ({intSess.id}) was interrupted by
+          process restart and has been paused.
+          <button
+            type="button"
+            onClick={() => handleDismissInterrupted(intSess.id)}
+            style={{ marginLeft: "12px" }}
+          >
             Dismiss
           </button>
         </div>
@@ -317,7 +333,10 @@ export function Correlate({ sumpId }: { sumpId: string }) {
       <div style={{ marginTop: "20px", padding: "12px", border: "1px solid #ccc" }}>
         <h3>Event Triggers & Scheduling</h3>
 
-        <form onSubmit={handleCreateRule} style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "12px" }}>
+        <form
+          onSubmit={handleCreateRule}
+          style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "12px" }}
+        >
           <input
             type="text"
             placeholder="Rule Name"
@@ -325,7 +344,10 @@ export function Correlate({ sumpId }: { sumpId: string }) {
             onChange={(e) => setRuleName(e.target.value)}
             required
           />
-          <select value={conditionType} onChange={(e) => setConditionType(e.target.value as "metric" | "log")}>
+          <select
+            value={conditionType}
+            onChange={(e) => setConditionType(e.target.value as "metric" | "log")}
+          >
             <option value="metric">Metric Threshold</option>
             <option value="log">Log Pattern (Regex)</option>
           </select>
@@ -338,7 +360,10 @@ export function Correlate({ sumpId }: { sumpId: string }) {
                 value={metricName}
                 onChange={(e) => setMetricName(e.target.value)}
               />
-              <select value={operator} onChange={(e) => setOperator(e.target.value as "gt" | "lt" | "eq" | "gte" | "lte")}>
+              <select
+                value={operator}
+                onChange={(e) => setOperator(e.target.value as "gt" | "lt" | "eq" | "gte" | "lte")}
+              >
                 <option value="gt">&gt;</option>
                 <option value="gte">&gt;=</option>
                 <option value="lt">&lt;</option>
@@ -361,7 +386,12 @@ export function Correlate({ sumpId }: { sumpId: string }) {
             />
           )}
 
-          <select value={action} onChange={(e) => setAction(e.target.value as "start_recording" | "stop_recording" | "notify")}>
+          <select
+            value={action}
+            onChange={(e) =>
+              setAction(e.target.value as "start_recording" | "stop_recording" | "notify")
+            }
+          >
             <option value="start_recording">Start Recording</option>
             <option value="stop_recording">Stop Recording</option>
             <option value="notify">Notify Only</option>
@@ -412,7 +442,10 @@ export function Correlate({ sumpId }: { sumpId: string }) {
           </button>
         </div>
 
-        <form onSubmit={handleRangeSnapshot} style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "12px" }}>
+        <form
+          onSubmit={handleRangeSnapshot}
+          style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "12px" }}
+        >
           <input
             type="text"
             placeholder="Start ISO (e.g. 2026-09-16T10:00:00Z)"
@@ -433,7 +466,14 @@ export function Correlate({ sumpId }: { sumpId: string }) {
         </form>
 
         {activeSnapshot && (
-          <div style={{ marginTop: "12px", padding: "8px", background: "#f8f9fa", border: "1px solid #ddd" }}>
+          <div
+            style={{
+              marginTop: "12px",
+              padding: "8px",
+              background: "#f8f9fa",
+              border: "1px solid #ddd",
+            }}
+          >
             <h4>Active View Snapshot ({activeSnapshot.records.length} records)</h4>
             <p style={{ fontSize: "0.85em", color: "#666" }}>
               Time Range: {activeSnapshot.startIso} → {activeSnapshot.endIso}
