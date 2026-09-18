@@ -1,36 +1,13 @@
-# cor-CORE.PACKAGING-001: the Sump's deployment unit -- the ImageSource/
-# composeFile cor-CORE.PROVISION-002's provisionLocal/provisionRemote
-# have referenced since Phase 2, but which nothing in this repo
-# actually supplied until now. Three services, not one bundled image
-# (§12 item 4's "embedded vs. shared Redis" resolved in favor of
-# shared sidecars, per cor-CORE.PACKAGING-001's own Notes).
+# Single container unit bundling correlator-sump, redis, and fluent-bit
 
 services:
-  sump:
+  correlator-sump:
     build: .
     image: ${CORRELATOR_IMAGE:-correlator-sump:latest}
     ports:
       - "${CORRELATOR_PORT:-8765}:8765"
+      - "${REDIS_PORT:-6379}:6379"
+      - "${FLUENT_PORT:-5140}:5140"
     environment:
       - CORRELATOR_API_TOKEN=${CORRELATOR_API_TOKEN:-}
-      - REDIS_URL=redis://redis:6379/0
-    depends_on:
-      - redis
-
-  redis:
-    image: redis:7-alpine
-
-  # fluent-bit.conf's OUTPUT side connects to 127.0.0.1:5170 (unchanged
-  # since cor-CORE.INGEST-001/Phase 1, written when Fluent Bit and the
-  # Sump app shared one container's network namespace) -- network_mode
-  # keeps that assumption true without touching that already-closed
-  # rule's config: this service shares `sump`'s network stack instead
-  # of getting its own, so 127.0.0.1 inside it really is the sump
-  # container.
-  fluent-bit:
-    image: fluent/fluent-bit:3.1
-    network_mode: "service:sump"
-    volumes:
-      - ./fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
-    depends_on:
-      - sump
+      - REDIS_URL=${REDIS_URL:-redis://127.0.0.1:6379/0}
