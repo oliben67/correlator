@@ -164,3 +164,4 @@ __pycache__/
 htmlcov/
 
 .claude/
+.icons-src

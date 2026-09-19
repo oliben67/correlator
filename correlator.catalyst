@@ -1,7 +1,7 @@
 {
   "project_name": "correlator",
   "framework_version": "0.27.0",
-  "agent": "copilot",
+  "agent": "claude-code",
   "agent-source": "/Users/oliviersteck/.claude/projects/-Users-oliviersteck-sources-correlator/criterion",
   "repoed": true,
   "catalyst_repo": "correlator-criterion",
