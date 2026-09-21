@@ -22,28 +22,39 @@ import {
 // electron-touching logic lives in shell.ts instead.)
 let lastWindow: FakeableBrowserWindow & { handlers: Record<string, (...args: unknown[]) => void> };
 let lastWindowOptions: Record<string, unknown> | null;
+let allWindows: FakeableBrowserWindow[];
 let electronApi: ElectronApi;
 
 beforeEach(() => {
   lastWindowOptions = null;
+  allWindows = [];
+  let nextWebContentsId = 1;
+  const BrowserWindow = vi.fn().mockImplementation((options: Record<string, unknown>) => {
+    lastWindowOptions = options;
+    const handlers: Record<string, (...args: unknown[]) => void> = {};
+    lastWindow = {
+      handlers,
+      show: vi.fn(),
+      loadFile: vi.fn(async () => undefined),
+      webContents: { id: nextWebContentsId++, send: vi.fn() },
+      on: (event, cb) => {
+        handlers[event] = cb;
+      },
+      once: (event, cb) => {
+        handlers[event] = cb;
+      },
+    };
+    allWindows.push(lastWindow);
+    return lastWindow;
+  }) as unknown as ElectronApi["BrowserWindow"];
+  // RM-000029: the sync-broadcast relay fans out via the real
+  // BrowserWindow.getAllWindows() static -- mirrored here as a plain
+  // function reading the same array every constructor call pushes into.
+  (BrowserWindow as unknown as { getAllWindows: () => FakeableBrowserWindow[] }).getAllWindows =
+    () => allWindows;
   electronApi = {
-    BrowserWindow: vi.fn().mockImplementation((options: Record<string, unknown>) => {
-      lastWindowOptions = options;
-      const handlers: Record<string, (...args: unknown[]) => void> = {};
-      lastWindow = {
-        handlers,
-        show: vi.fn(),
-        loadFile: vi.fn(async () => undefined),
-        on: (event, cb) => {
-          handlers[event] = cb;
-        },
-        once: (event, cb) => {
-          handlers[event] = cb;
-        },
-      };
-      return lastWindow;
-    }) as unknown as ElectronApi["BrowserWindow"],
-    ipcMain: { handle: vi.fn() },
+    BrowserWindow,
+    ipcMain: { handle: vi.fn(), on: vi.fn() },
     app: { on: vi.fn(), quit: vi.fn() },
   };
 });
@@ -56,6 +67,73 @@ const windowOptions = { preloadPath: "/fake/preload.cjs", indexHtmlPath: "/fake/
 // every call here already passes an explicit catalogPath/fetchFn
 // instead of relying on defaultCatalogPath()/global fetch).
 const testUserId = "test-user-id";
+
+/**
+ * A minimal (stored-entries-only, no compression) zip builder -- just
+ * enough to exercise `archive-reader.ts`'s real parsing rather than
+ * stubbing it out, without pulling in `zlib.deflateRawSync` for tests
+ * that don't care about compression at all.
+ */
+function buildStoredZip(entries: { name: string; data: string }[]): Uint8Array {
+  const chunks: Buffer[] = [];
+  const centralDirectoryEntries: Buffer[] = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const nameBuf = Buffer.from(entry.name, "utf8");
+    const dataBuf = Buffer.from(entry.data, "utf8");
+
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt32LE(dataBuf.length, 18);
+    localHeader.writeUInt32LE(dataBuf.length, 22);
+    localHeader.writeUInt16LE(nameBuf.length, 26);
+
+    const localHeaderOffset = offset;
+    chunks.push(localHeader, nameBuf, dataBuf);
+    offset += localHeader.length + nameBuf.length + dataBuf.length;
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(20, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt32LE(dataBuf.length, 20);
+    centralHeader.writeUInt32LE(dataBuf.length, 24);
+    centralHeader.writeUInt16LE(nameBuf.length, 28);
+    centralHeader.writeUInt32LE(localHeaderOffset, 42);
+    centralDirectoryEntries.push(Buffer.concat([centralHeader, nameBuf]));
+  }
+
+  const centralDirectory = Buffer.concat(centralDirectoryEntries);
+  const centralDirectoryOffset = offset;
+
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(centralDirectory.length, 12);
+  eocd.writeUInt32LE(centralDirectoryOffset, 16);
+
+  return new Uint8Array(Buffer.concat([...chunks, centralDirectory, eocd]));
+}
+
+function buildTrackArchiveBytes(systemKind: "host" | "container"): Uint8Array {
+  const manifest = JSON.stringify({
+    version: 1,
+    kind: "track",
+    from: 0,
+    to: 20,
+    created: "2026-09-19T00:00:00.000Z",
+    series_name: "cpu_pct",
+    system_kind: systemKind,
+    file: "series.json",
+  });
+  return buildStoredZip([
+    { name: "series.json", data: JSON.stringify({ points: [[0, 0.5]] }) },
+    { name: "manifest.json", data: manifest },
+  ]);
+}
 
 describe("cor-CORE.SHELL-001: window shell", () => {
   it("creates the window hidden, with contextIsolation on and nodeIntegration off", async () => {
@@ -89,8 +167,8 @@ describe("cor-CORE.SHELL-001: window shell", () => {
 });
 
 describe("cor-CORE.SHELL-002: IPC bridge", () => {
-  it("every preload.cjs channel has a matching ipcMain.handle registration", () => {
-    registerIpcHandlers(electronApi, "/fake/catalog.db", fetch, testUserId);
+  it("every preload.cjs channel has a matching ipcMain.handle registration", async () => {
+    await registerIpcHandlers(electronApi, "/fake/catalog.db", fetch, testUserId);
     const registeredChannels = (
       electronApi.ipcMain.handle as ReturnType<typeof vi.fn>
     ).mock.calls.map((call) => call[0] as string);
@@ -124,7 +202,7 @@ describe("cor-CORE.SHELL-002: IPC bridge", () => {
     });
     seeded.close();
 
-    registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
     const listSumpsHandler = (
       electronApi.ipcMain.handle as ReturnType<typeof vi.fn>
     ).mock.calls.find((call) => call[0] === "list-sumps")?.[1] as (
@@ -172,7 +250,7 @@ describe("cor-CORE.SHELL-002: IPC bridge", () => {
       );
     }) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
     const queryRecordsHandler = (
       electronApi.ipcMain.handle as ReturnType<typeof vi.fn>
     ).mock.calls.find((call) => call[0] === "query-records")?.[1] as (
@@ -203,7 +281,12 @@ describe("cor-CORE.SHELL-002: IPC bridge", () => {
     const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
     const catalogPath = join(dir, "catalog.db");
 
-    registerIpcHandlers(electronApi, catalogPath, vi.fn() as unknown as typeof fetch, testUserId);
+    await registerIpcHandlers(
+      electronApi,
+      catalogPath,
+      vi.fn() as unknown as typeof fetch,
+      testUserId,
+    );
     const queryRecordsHandler = (
       electronApi.ipcMain.handle as ReturnType<typeof vi.fn>
     ).mock.calls.find((call) => call[0] === "query-records")?.[1] as (
@@ -257,7 +340,7 @@ describe("cor-CORE.PROJECT-003: recording/track download and catalog registratio
       async () => new Response(fakeBytes, { status: 200 }),
     ) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
     const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
       (call) => call[0] === "download-recording",
     )?.[1] as (...args: unknown[]) => Promise<{ id: string; filePath: string }>;
@@ -310,7 +393,7 @@ describe("cor-CORE.PROJECT-003: recording/track download and catalog registratio
       async () => new Response("nope", { status: 404 }),
     ) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
     const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
       (call) => call[0] === "download-track",
     )?.[1] as (...args: unknown[]) => Promise<unknown>;
@@ -332,6 +415,272 @@ describe("cor-CORE.PROJECT-003: recording/track download and catalog registratio
     expect(sumps[0].lastSeenAt).toBeNull();
 
     expect(loadProject(projectPath).references).toEqual([]);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("downloadTrack tags the catalog row's catalogJson with the archive's system_kind", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    const projectPath = join(dir, "test.correlator");
+
+    const { Catalog } = await import("../lib/catalog.ts");
+    const { saveProject, createProject } = await import("../lib/project.ts");
+    saveProject(projectPath, createProject());
+
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "sump-1",
+      name: "seeded",
+      connectionType: "logical",
+      host: "127.0.0.1",
+      port: 5170,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-10T00:00:00Z",
+      lastSeenAt: null,
+      dockerHost: "h1",
+    });
+    seeded.upsertDataStream({
+      id: "ds-1",
+      sumpId: "sump-1",
+      kind: "ssh",
+      sourceRef: "h1",
+      ownerUserId: null,
+      isPrivate: false,
+      catalogJson: "{}",
+      createdAt: "2026-09-10T00:00:00Z",
+    });
+    seeded.close();
+
+    const archiveBytes = buildTrackArchiveBytes("host");
+    const fakeFetch = vi.fn(
+      async () => new Response(archiveBytes, { status: 200 }),
+    ) as unknown as typeof fetch;
+
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === "download-track",
+    )?.[1] as (...args: unknown[]) => Promise<{ id: string; filePath: string }>;
+
+    const result = await handler(null, {
+      sumpId: "sump-1",
+      dataStreamId: "ds-1",
+      metric: "cpu_pct",
+      projectPath,
+    });
+
+    const check = new Catalog(catalogPath);
+    const row = check.getTrack(result.id);
+    check.close();
+    expect(JSON.parse(row?.catalogJson ?? "{}")).toEqual({ systemKind: "host" });
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("cor-CORE.PROJECT-005: live-project context isolation", () => {
+  async function seedTwoSumps(catalogPath: string): Promise<void> {
+    const { Catalog } = await import("../lib/catalog.ts");
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "sump-1",
+      name: "sump-1",
+      connectionType: "logical",
+      host: "127.0.0.1",
+      port: 5170,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-10T00:00:00Z",
+      lastSeenAt: null,
+      dockerHost: "h1",
+    });
+    seeded.upsertSump({
+      id: "sump-2",
+      name: "sump-2",
+      connectionType: "logical",
+      host: "127.0.0.1",
+      port: 5171,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-10T00:00:00Z",
+      lastSeenAt: null,
+      dockerHost: "h2",
+    });
+    seeded.upsertDataStream({
+      id: "ds-1",
+      sumpId: "sump-1",
+      kind: "ssh",
+      sourceRef: "h1",
+      ownerUserId: null,
+      isPrivate: false,
+      catalogJson: "{}",
+      createdAt: "2026-09-10T00:00:00Z",
+    });
+    seeded.upsertDataStream({
+      id: "ds-2",
+      sumpId: "sump-2",
+      kind: "ssh",
+      sourceRef: "h2",
+      ownerUserId: null,
+      isPrivate: false,
+      catalogJson: "{}",
+      createdAt: "2026-09-10T00:00:00Z",
+    });
+    seeded.close();
+  }
+
+  function findDownloadRecordingHandler(): (
+    ...args: unknown[]
+  ) => Promise<{ id: string; filePath: string }> {
+    return (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === "download-recording",
+    )?.[1] as (...args: unknown[]) => Promise<{ id: string; filePath: string }>;
+  }
+
+  it("binds an explicit project to the first sump/dataStream it receives a reference from", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    const projectPath = join(dir, "test.correlator");
+    await seedTwoSumps(catalogPath);
+
+    const { saveProject, createProject, loadProject } = await import("../lib/project.ts");
+    saveProject(projectPath, createProject());
+
+    const fakeFetch = vi.fn(
+      async () => new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 }),
+    ) as unknown as typeof fetch;
+
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    const handler = findDownloadRecordingHandler();
+
+    await handler(null, { sumpId: "sump-1", dataStreamId: "ds-1", projectPath });
+
+    expect(loadProject(projectPath).context).toEqual({ sumpId: "sump-1", dataStreamId: "ds-1" });
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("rejects a download from a different sump/dataStream once the project is bound, adding no reference", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    const projectPath = join(dir, "test.correlator");
+    await seedTwoSumps(catalogPath);
+
+    const { saveProject, createProject, loadProject } = await import("../lib/project.ts");
+    saveProject(projectPath, createProject());
+
+    const fakeFetch = vi.fn(
+      async () => new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 }),
+    ) as unknown as typeof fetch;
+
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    const handler = findDownloadRecordingHandler();
+
+    await handler(null, { sumpId: "sump-1", dataStreamId: "ds-1", projectPath });
+
+    await expect(
+      handler(null, { sumpId: "sump-2", dataStreamId: "ds-2", projectPath }),
+    ).rejects.toThrow(/bound to a different live context/);
+
+    expect(loadProject(projectPath).references).toHaveLength(1);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("never applies the isolation check to the default project", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    await seedTwoSumps(catalogPath);
+
+    // defaultProjectPath() resolves under os.homedir() -- redirect HOME
+    // at the real filesystem module boundary so this exercises the
+    // real "no projectPath" branch without ever touching the actual
+    // user's ~/.correlator/default.correlator.
+    vi.stubEnv("HOME", dir);
+    try {
+      const fakeFetch = vi.fn(
+        async () => new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 }),
+      ) as unknown as typeof fetch;
+
+      await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+      const handler = findDownloadRecordingHandler();
+
+      await handler(null, { sumpId: "sump-1", dataStreamId: "ds-1" });
+      await expect(
+        handler(null, { sumpId: "sump-2", dataStreamId: "ds-2" }),
+      ).resolves.toBeDefined();
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("cor-CORE.ARCHIVE-001: archive read-back IPC handlers", () => {
+  function findHandler(channel: string): (...args: unknown[]) => Promise<unknown> {
+    return (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === channel,
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+  }
+
+  it("read-track-archive reads a track file back off disk", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    const filePath = join(dir, "sample.track");
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(filePath, buildTrackArchiveBytes("container"));
+
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+    const handler = findHandler("read-track-archive");
+
+    const archive = (await handler(null, filePath)) as {
+      seriesName: string;
+      points: [number, number][];
+      systemKind: string;
+    };
+
+    expect(archive.seriesName).toBe("cpu_pct");
+    expect(archive.points).toEqual([[0, 0.5]]);
+    expect(archive.systemKind).toBe("container");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("read-recording-archive reads a recording file back off disk", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    const filePath = join(dir, "sample.recording");
+    const { writeFileSync } = await import("node:fs");
+    const manifest = JSON.stringify({
+      version: 1,
+      kind: "recording",
+      from: 0,
+      to: 100,
+      created: "2026-09-19T00:00:00.000Z",
+      sources: [{ name: "web-1", file: "logs/0.jsonl", system_kind: "container" }],
+    });
+    writeFileSync(
+      filePath,
+      buildStoredZip([
+        { name: "logs/0.jsonl", data: JSON.stringify({ ts: 10, text: "hi" }) },
+        { name: "manifest.json", data: manifest },
+      ]),
+    );
+
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+    const handler = findHandler("read-recording-archive");
+
+    const archive = (await handler(null, filePath)) as {
+      sources: Record<string, { tsMs: number; text: string }[]>;
+      systemKinds: Record<string, string>;
+    };
+
+    expect(archive.sources["web-1"]).toEqual([{ tsMs: 10, text: "hi" }]);
+    expect(archive.systemKinds).toEqual({ "web-1": "container" });
 
     rmSync(dir, { recursive: true, force: true });
   });
@@ -369,7 +718,7 @@ describe("cor-CORE.FEDERATION-001/-002: data-source listing and privacy", () => 
       return new Response(JSON.stringify({ data_sources: ["self"] }), { status: 200 });
     }) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
     const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
       (call) => call[0] === "list-data-sources",
     )?.[1] as (...args: unknown[]) => Promise<unknown>;
@@ -406,7 +755,7 @@ describe("cor-CORE.FEDERATION-001/-002: data-source listing and privacy", () => 
       });
     }) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
     const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
       (call) => call[0] === "set-data-source-privacy",
     )?.[1] as (...args: unknown[]) => Promise<unknown>;
@@ -460,7 +809,7 @@ describe("cor-CORE.FEDERATION-004: promote-data-stream", () => {
         ),
     ) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
     const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
       (call) => call[0] === "promote-data-stream",
     )?.[1] as (...args: unknown[]) => Promise<{ childSumpId: string }>;
@@ -516,7 +865,7 @@ describe("cor-CORE.FEDERATION-004: promote-data-stream", () => {
       async () => new Response("nope", { status: 422 }),
     ) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
     const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
       (call) => call[0] === "promote-data-stream",
     )?.[1] as (...args: unknown[]) => Promise<unknown>;
@@ -608,7 +957,7 @@ describe("cor-CORE.PROVISION-006: Add Sump chooser backing actions", () => {
     it("returns true when docker info succeeds", async () => {
       const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
       const catalogPath = join(dir, "catalog.db");
-      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
         spawnFn: fakeSpawn(0, 0),
       });
 
@@ -620,7 +969,7 @@ describe("cor-CORE.PROVISION-006: Add Sump chooser backing actions", () => {
     it("returns false when docker info fails", async () => {
       const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
       const catalogPath = join(dir, "catalog.db");
-      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
         spawnFn: fakeSpawn(1, 0),
       });
 
@@ -643,7 +992,7 @@ describe("cor-CORE.PROVISION-006: Add Sump chooser backing actions", () => {
         return new Response(null, { status: 200 });
       }) as unknown as typeof fetch;
 
-      registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+      await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
       const result = (await findHandler("connect-existing-sump")(null, {
         name: "existing",
         host: "10.0.0.5",
@@ -673,7 +1022,7 @@ describe("cor-CORE.PROVISION-006: Add Sump chooser backing actions", () => {
         async () => new Response(null, { status: 503 }),
       ) as unknown as typeof fetch;
 
-      registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+      await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
       await expect(
         findHandler("connect-existing-sump")(null, {
           name: "existing",
@@ -697,7 +1046,7 @@ describe("cor-CORE.PROVISION-006: Add Sump chooser backing actions", () => {
       const catalogPath = join(dir, "catalog.db");
       vi.stubGlobal("fetch", fakeFetchOk());
 
-      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
         spawnFn: fakeSpawn(0, 0),
       });
       const result = (await findHandler("install-local-sump")()) as {
@@ -715,7 +1064,7 @@ describe("cor-CORE.PROVISION-006: Add Sump chooser backing actions", () => {
       const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
       const catalogPath = join(dir, "catalog.db");
 
-      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
         spawnFn: fakeSpawn(1, 0),
       });
       await expect(findHandler("install-local-sump")()).rejects.toThrow(/docker/i);
@@ -735,7 +1084,7 @@ describe("cor-CORE.PROVISION-006: Add Sump chooser backing actions", () => {
       const catalogPath = join(dir, "catalog.db");
       vi.stubGlobal("fetch", fakeFetchOk());
 
-      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
         spawnFn: fakeSpawn(0, 0),
       });
       const result = (await findHandler("install-remote-sump")(null, {
@@ -755,7 +1104,7 @@ describe("cor-CORE.PROVISION-006: Add Sump chooser backing actions", () => {
       const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
       const catalogPath = join(dir, "catalog.db");
 
-      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
         spawnFn: fakeSpawn(0, 1),
       });
       await expect(
@@ -811,7 +1160,7 @@ describe("cor-CORE.PROVISION-007: sump management and switcher", () => {
       const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
       const catalogPath = join(dir, "catalog.db");
       await seedExternalSump(catalogPath, "sump-1");
-      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
 
       expect(await findHandler("get-primary-sump-id")()).toBeNull();
 
@@ -824,7 +1173,7 @@ describe("cor-CORE.PROVISION-007: sump management and switcher", () => {
     it("rejects an unknown sump id", async () => {
       const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
       const catalogPath = join(dir, "catalog.db");
-      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
 
       await expect(
         findHandler("select-primary-sump")(null, { sumpId: "no-such-sump" }),
@@ -837,7 +1186,7 @@ describe("cor-CORE.PROVISION-007: sump management and switcher", () => {
       const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
       const catalogPath = join(dir, "catalog.db");
       await seedExternalSump(catalogPath, "sump-1");
-      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
       await findHandler("uninstall-sump")(null, { sumpId: "sump-1" });
 
       await expect(findHandler("select-primary-sump")(null, { sumpId: "sump-1" })).rejects.toThrow(
@@ -853,7 +1202,7 @@ describe("cor-CORE.PROVISION-007: sump management and switcher", () => {
       const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
       const catalogPath = join(dir, "catalog.db");
       await seedExternalSump(catalogPath, "sump-1");
-      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
 
       const result = (await findHandler("rename-sump")(null, {
         sumpId: "sump-1",
@@ -866,12 +1215,31 @@ describe("cor-CORE.PROVISION-007: sump management and switcher", () => {
     });
   });
 
+  describe("update-sump-connection", () => {
+    it("edits only the fields given, returning the updated row", async () => {
+      const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+      const catalogPath = join(dir, "catalog.db");
+      await seedExternalSump(catalogPath, "sump-1");
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+
+      const result = (await findHandler("update-sump-connection")(null, {
+        sumpId: "sump-1",
+        host: "10.0.0.9",
+      })) as { host: string | null; port: number | null };
+
+      expect(result.host).toBe("10.0.0.9");
+      expect(result.port).toBe(9000); // unchanged -- not part of this update
+
+      rmSync(dir, { recursive: true, force: true });
+    });
+  });
+
   describe("uninstall-sump", () => {
     it("retires an external sump with no docker/ssh side effect", async () => {
       const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
       const catalogPath = join(dir, "catalog.db");
       await seedExternalSump(catalogPath, "sump-1");
-      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
 
       await findHandler("uninstall-sump")(null, { sumpId: "sump-1" });
 
@@ -888,7 +1256,7 @@ describe("cor-CORE.PROVISION-007: sump management and switcher", () => {
       const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
       const catalogPath = join(dir, "catalog.db");
       await seedExternalSump(catalogPath, "sump-1");
-      registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
       await findHandler("select-primary-sump")(null, { sumpId: "sump-1" });
 
       await findHandler("uninstall-sump")(null, { sumpId: "sump-1" });
@@ -931,7 +1299,7 @@ describe("cor-CORE.PROVISION-008: docker-host-scoped logical sumps", () => {
         new Response(JSON.stringify({ data_sources: ["self", "host-b"] }), { status: 200 }),
     ) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
     const result = (await findHandler("list-sumps")()) as Array<{
       id: string;
       connectionType: string;
@@ -973,7 +1341,7 @@ describe("cor-CORE.PROVISION-008: docker-host-scoped logical sumps", () => {
       throw new Error("ECONNREFUSED");
     }) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
     const result = (await findHandler("list-sumps")()) as Array<{ id: string }>;
 
     expect(result).toHaveLength(1);
@@ -1026,7 +1394,7 @@ describe("cor-CORE.PROVISION-008: docker-host-scoped logical sumps", () => {
       );
     }) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
     await findHandler("query-records")(null, "root-1:host-a", {});
 
     expect(requestedUrl?.searchParams.get("docker_host")).toBe("host-a");
@@ -1053,7 +1421,7 @@ describe("cor-CORE.PROVISION-008: docker-host-scoped logical sumps", () => {
     });
     seeded.close();
 
-    registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
     await expect(findHandler("query-records")(null, "root-1", {})).rejects.toThrow(
       /no docker_host scope/,
     );
@@ -1072,6 +1440,14 @@ describe("cor-CORE.ARCHIVE-000003: live recording session IPC handlers", () => {
   it("handles start, get, pause, resume, stop recording sessions via IPC", async () => {
     const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
     const catalogPath = join(dir, "catalog.db");
+    // Pause/stop export to the *default* project when no projectPath is
+    // given (there's no live-session concept of an explicit project yet)
+    // -- which resolves under os.homedir(). Without this, this test
+    // silently wrote real junk recordings into the actual developer's
+    // ~/.correlator/default.correlator on every run (found while adding
+    // the cor-CORE.PROJECT-005 isolation tests above, which is what
+    // first stubbed HOME for a shell.test.ts case).
+    vi.stubEnv("HOME", dir);
     const { Catalog } = await import("../lib/catalog.ts");
     const seeded = new Catalog(catalogPath);
     seeded.upsertSump({
@@ -1103,7 +1479,7 @@ describe("cor-CORE.ARCHIVE-000003: live recording session IPC handlers", () => {
       async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 }),
     ) as unknown as typeof fetch;
 
-    registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
 
     // Start
     const started = (await findHandler("start-recording-session")(null, {
@@ -1137,6 +1513,7 @@ describe("cor-CORE.ARCHIVE-000003: live recording session IPC handlers", () => {
     expect(stopped?.status).toBe("stopped");
     expect(stopped?.segments).toHaveLength(2);
 
+    vi.unstubAllEnvs();
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -1163,7 +1540,7 @@ describe("cor-CORE.ARCHIVE-000003: live recording session IPC handlers", () => {
     seeded.close();
 
     // Re-register IPC handlers (simulates app boot)
-    registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
 
     const interrupted = (await findHandler("get-interrupted-sessions")()) as Array<{
       id: string;
@@ -1181,6 +1558,74 @@ describe("cor-CORE.ARCHIVE-000003: live recording session IPC handlers", () => {
     expect(remaining).toHaveLength(0);
 
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("actually exports and registers the crashed segment's data on boot, instead of silently dropping it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    // Boot-time export writes into the real default project, resolved
+    // under os.homedir() -- redirect HOME so this exercises the real
+    // exportSegmentFn wiring without touching the actual developer's
+    // ~/.correlator/ (see BUG-000004-z6qEx1Kf).
+    vi.stubEnv("HOME", dir);
+    try {
+      const { Catalog } = await import("../lib/catalog.ts");
+      const { startRecordingSession } = await import("../lib/recording-session.ts");
+
+      const seeded = new Catalog(catalogPath);
+      seeded.upsertSump({
+        id: "sump-1",
+        name: "local",
+        connectionType: "logical",
+        host: "127.0.0.1",
+        port: 8765,
+        status: "active",
+        authToken: null,
+        catalogJson: "{}",
+        createdAt: "2026-09-16T00:00:00Z",
+        lastSeenAt: null,
+        dockerHost: "h1",
+      });
+      seeded.upsertDataStream({
+        id: "sump-1",
+        sumpId: "sump-1",
+        kind: "sump",
+        sourceRef: "sump-1",
+        ownerUserId: null,
+        isPrivate: false,
+        catalogJson: "{}",
+        createdAt: "2026-09-16T00:00:00Z",
+      });
+      startRecordingSession(seeded, { sumpId: "sump-1" });
+      seeded.close();
+
+      const fakeFetch = vi.fn(
+        async () => new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 }),
+      ) as unknown as typeof fetch;
+
+      // Re-register IPC handlers (simulates app boot)
+      await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+
+      const interrupted = (await findHandler("get-interrupted-sessions")()) as Array<{
+        id: string;
+        segments: Array<{ recordingId?: string; filePath?: string }>;
+      }>;
+
+      expect(interrupted).toHaveLength(1);
+      expect(interrupted[0].segments).toHaveLength(1);
+      const { recordingId, filePath } = interrupted[0].segments[0];
+      expect(recordingId).toBeTruthy();
+      expect(filePath).toBeTruthy();
+
+      const check = new Catalog(catalogPath);
+      const row = check.getRecording(recordingId as string);
+      check.close();
+      expect(row?.filePath).toBe(filePath);
+      expect(existsSync(row?.filePath as string)).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -1211,7 +1656,7 @@ describe("cor-CORE.EVENT-000001/-000002: event triggers IPC handlers", () => {
     });
     seeded.close();
 
-    registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
 
     // Create Rule
     const created = (await findHandler("create-event-rule")(null, {
@@ -1260,6 +1705,43 @@ describe("cor-CORE.EVENT-000001/-000002: event triggers IPC handlers", () => {
   });
 });
 
+describe("RM-000030: get-app-version IPC handler", () => {
+  function findHandler(channel: string): (...args: unknown[]) => Promise<unknown> {
+    return (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === channel,
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+  }
+
+  it("returns the real package.json version and process.versions.node", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+
+    const result = (await findHandler("get-app-version")()) as {
+      version: string;
+      node: string;
+      electron: string | null;
+      chrome: string | null;
+    };
+
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
+      version: string;
+    };
+    expect(result.version).toBe(pkg.version);
+    expect(result.node).toBe(process.versions.node);
+    // Whatever's actually running this test (plain Node, or an Electron
+    // binary launched with ELECTRON_RUN_AS_NODE, e.g. inside VS Code's
+    // extension host -- see main.cjs's own comment about that exact
+    // quirk) is the real ground truth here, not an assumption that
+    // Electron is never present -- shell.ts's own `?? null` fallback is
+    // what's actually under test, so mirror its exact logic.
+    expect(result.electron).toBe(process.versions.electron ?? null);
+    expect(result.chrome).toBe(process.versions.chrome ?? null);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
 describe("cor-CORE.SHELL-000005: app preferences IPC handlers", () => {
   function findHandler(channel: string): (...args: unknown[]) => Promise<unknown> {
     return (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
@@ -1271,7 +1753,7 @@ describe("cor-CORE.SHELL-000005: app preferences IPC handlers", () => {
     const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
     const catalogPath = join(dir, "catalog.db");
 
-    registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
 
     const initial = (await findHandler("get-preferences")()) as { defaultQueryLimit: number };
     expect(initial.defaultQueryLimit).toBe(100);
@@ -1286,6 +1768,199 @@ describe("cor-CORE.SHELL-000005: app preferences IPC handlers", () => {
 
     const reRead = (await findHandler("get-preferences")()) as { defaultQueryLimit: number };
     expect(reRead.defaultQueryLimit).toBe(300);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("applies a previously-saved theme preference to nativeTheme.themeSource at boot", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+
+    const { Catalog } = await import("../lib/catalog.ts");
+    const { savePreferences } = await import("../lib/preferences.ts");
+    const seeded = new Catalog(catalogPath);
+    savePreferences(seeded, { theme: "dark" });
+    seeded.close();
+
+    electronApi.nativeTheme = { themeSource: "system" };
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+
+    expect(electronApi.nativeTheme.themeSource).toBe("dark");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("cor-CORE.UI-000001: set-preferences applies a live theme change to nativeTheme.themeSource", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+
+    electronApi.nativeTheme = { themeSource: "system" };
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+
+    await findHandler("set-preferences")(null, { theme: "light" });
+    expect(electronApi.nativeTheme.themeSource).toBe("light");
+
+    await findHandler("set-preferences")(null, { theme: "system" });
+    expect(electronApi.nativeTheme.themeSource).toBe("system");
+
+    // A preferences update that doesn't touch theme leaves it alone.
+    await findHandler("set-preferences")(null, { theme: "dark" });
+    await findHandler("set-preferences")(null, { defaultQueryLimit: 50 });
+    expect(electronApi.nativeTheme.themeSource).toBe("dark");
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("RM-000029: pop-out/detach IPC handlers", () => {
+  function findHandler(channel: string): (...args: unknown[]) => Promise<unknown> {
+    return (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === channel,
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+  }
+
+  function findOnHandler(
+    channel: string,
+  ): (event: { sender: { id: number } }, ...args: unknown[]) => void {
+    return (electronApi.ipcMain.on as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === channel,
+    )?.[1] as (event: { sender: { id: number } }, ...args: unknown[]) => void;
+  }
+
+  it("opens a chart window sized/positioned per detachWindowSpec, loading index.html with a detach search", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+      preloadPath: "/fake/preload.cjs",
+      indexHtmlPath: "/fake/index.html",
+    });
+
+    const result = (await findHandler("open-detached-panel")(null, "chart", {
+      sumpId: "sump-1",
+      t0: 1000,
+      t1: 61000,
+      cursorT: 30000,
+    })) as { opened: boolean };
+
+    expect(result).toEqual({ opened: true });
+    expect(lastWindowOptions).toMatchObject({
+      width: 1000,
+      height: 620,
+      alwaysOnTop: false,
+      webPreferences: {
+        preload: "/fake/preload.cjs",
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    expect(lastWindow.loadFile).toHaveBeenCalledWith(
+      "/fake/index.html",
+      expect.objectContaining({
+        search: "detach=chart&sumpId=sump-1&t0=1000&t1=61000&cursorT=30000",
+      }),
+    );
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("opens the sidebar always-on-top, chart/log not always-on-top", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+      preloadPath: "/fake/preload.cjs",
+      indexHtmlPath: "/fake/index.html",
+    });
+
+    await findHandler("open-detached-panel")(null, "sidebar", {});
+    expect(lastWindowOptions).toMatchObject({ alwaysOnTop: true });
+
+    await findHandler("open-detached-panel")(null, "log", { sumpId: "sump-1" });
+    expect(lastWindowOptions).toMatchObject({ alwaysOnTop: false });
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("refocuses an already-open panel instead of creating a second window", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+      preloadPath: "/fake/preload.cjs",
+      indexHtmlPath: "/fake/index.html",
+    });
+
+    await findHandler("open-detached-panel")(null, "chart", { sumpId: "sump-1" });
+    const firstWindow = lastWindow;
+    expect(allWindows).toHaveLength(1);
+
+    const result = (await findHandler("open-detached-panel")(null, "chart", {
+      sumpId: "sump-1",
+    })) as { opened: boolean };
+
+    expect(result).toEqual({ opened: false });
+    expect(allWindows).toHaveLength(1);
+    expect(firstWindow.show).toHaveBeenCalled();
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("re-registers as closable: closing the window lets it be reopened, and notifies the main window", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+      preloadPath: "/fake/preload.cjs",
+      indexHtmlPath: "/fake/index.html",
+    });
+
+    const main = await createWindow(electronApi, windowOptions);
+    (main.webContents.send as ReturnType<typeof vi.fn>).mockClear();
+
+    await findHandler("open-detached-panel")(null, "chart", { sumpId: "sump-1" });
+    const detachedWindow = lastWindow;
+
+    detachedWindow.handlers.closed?.();
+
+    expect(main.webContents.send).toHaveBeenCalledWith("detached-panel-closed", { kind: "chart" });
+
+    // The registry entry was cleared -- reopening creates a genuinely
+    // new window rather than refocusing the (now-closed) old one.
+    await findHandler("open-detached-panel")(null, "chart", { sumpId: "sump-1" });
+    expect(lastWindow).not.toBe(detachedWindow);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("throws when preloadPath/indexHtmlPath weren't provided", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+
+    await expect(findHandler("open-detached-panel")(null, "chart", {})).rejects.toThrow(
+      /preloadPath/,
+    );
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("sync-broadcast relays a message to every other open window, never back to the sender", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId, {
+      preloadPath: "/fake/preload.cjs",
+      indexHtmlPath: "/fake/index.html",
+    });
+
+    const main = await createWindow(electronApi, windowOptions);
+    await findHandler("open-detached-panel")(null, "chart", { sumpId: "sump-1" });
+    const detached = lastWindow;
+    (main.webContents.send as ReturnType<typeof vi.fn>).mockClear();
+    (detached.webContents.send as ReturnType<typeof vi.fn>).mockClear();
+
+    const relay = findOnHandler("sync-broadcast");
+    const message = { type: "view", t0: 0, t1: 60000 };
+    relay({ sender: detached.webContents }, message);
+
+    expect(main.webContents.send).toHaveBeenCalledWith("sync-broadcast", message);
+    expect(detached.webContents.send).not.toHaveBeenCalled();
 
     rmSync(dir, { recursive: true, force: true });
   });

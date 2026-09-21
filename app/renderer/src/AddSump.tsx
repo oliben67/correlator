@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
+import { Button } from "./components/Button.js";
+import { Panel } from "./components/Panel.js";
 
 // cor-CORE.PROVISION-006: the interactive "Add Sump" chooser, shown by
-// App.tsx whenever the catalog has no live Sump. No CSS framework exists
-// in this repo (no .css file, no <style> tag) -- plain inline styles only,
-// matching the zero-styling convention already in place.
+// App.tsx whenever the catalog has no live Sump.
 
 type DockerState =
   | { status: "checking" }
@@ -13,13 +13,6 @@ type DockerState =
 type ExpandedOption = "connect" | "deploy" | null;
 
 type ActionState = { phase: "idle" } | { phase: "pending" } | { phase: "error"; message: string };
-
-const sectionStyle: React.CSSProperties = {
-  border: "1px solid #ccc",
-  borderRadius: 4,
-  marginBottom: 8,
-  padding: 12,
-};
 
 const fieldStyle: React.CSSProperties = { display: "block", marginBottom: 8, width: "100%" };
 
@@ -64,10 +57,8 @@ export function AddSump({
     <div>
       {heading && <p>{heading}</p>}
 
-      <div style={sectionStyle}>
-        <button type="button" onClick={() => toggle("connect")}>
-          Connect to an existing Sump
-        </button>
+      <Panel>
+        <Button onClick={() => toggle("connect")}>Connect to an existing Sump</Button>
         {expanded === "connect" && (
           <ConnectForm
             pending={pending}
@@ -82,12 +73,10 @@ export function AddSump({
             }}
           />
         )}
-      </div>
+      </Panel>
 
-      <div style={sectionStyle}>
-        <button type="button" onClick={() => toggle("deploy")}>
-          Deploy a new Sump
-        </button>
+      <Panel>
+        <Button onClick={() => toggle("deploy")}>Deploy a new Sump</Button>
         {expanded === "deploy" && (
           <DeploySection
             docker={docker}
@@ -112,7 +101,7 @@ export function AddSump({
             }}
           />
         )}
-      </div>
+      </Panel>
 
       {action.phase === "error" && <p role="alert">{action.message}</p>}
     </div>
@@ -164,9 +153,9 @@ function ConnectForm({
         Auth token (optional)
         <input value={authToken} onChange={(e) => setAuthToken(e.target.value)} />
       </label>
-      <button type="submit" disabled={pending}>
+      <Button type="submit" variant="primary" disabled={pending}>
         Connect
-      </button>
+      </Button>
     </form>
   );
 }
@@ -199,9 +188,9 @@ function DeploySection({
     return (
       <div>
         <p>Docker is available — this Sump will be built and run locally.</p>
-        <button type="button" disabled={pending} onClick={onInstallLocal}>
+        <Button variant="primary" disabled={pending} onClick={onInstallLocal}>
           Install locally
-        </button>
+        </Button>
       </div>
     );
   }
@@ -282,9 +271,9 @@ function RemoteDeployForm({
         Note: the default published image above isn't available yet — this option can't complete an
         install until it is. Point this at your own registry image if you have one.
       </p>
-      <button type="submit" disabled={pending}>
+      <Button type="submit" variant="primary" disabled={pending}>
         Deploy
-      </button>
+      </Button>
     </form>
   );
 }

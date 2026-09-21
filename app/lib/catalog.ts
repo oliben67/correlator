@@ -384,6 +384,25 @@ export class Catalog {
     this.db.prepare("UPDATE sumps SET name = ? WHERE id = ?").run(name, id);
   }
 
+  /** RM-000027: edits an existing Sump's connection details -- only
+   * `rename-sump` existed before this; a connection mistake (wrong
+   * host/port/token) previously had no fix short of uninstalling and
+   * re-adding the Sump from scratch. */
+  updateSumpConnection(
+    id: string,
+    updates: { host?: string | null; port?: number | null; authToken?: string | null },
+  ): void {
+    if (updates.host !== undefined) {
+      this.db.prepare("UPDATE sumps SET host = ? WHERE id = ?").run(updates.host, id);
+    }
+    if (updates.port !== undefined) {
+      this.db.prepare("UPDATE sumps SET port = ? WHERE id = ?").run(updates.port, id);
+    }
+    if (updates.authToken !== undefined) {
+      this.db.prepare("UPDATE sumps SET auth_token = ? WHERE id = ?").run(updates.authToken, id);
+    }
+  }
+
   getSetting(key: string): string | null {
     const row = this.db.prepare("SELECT value FROM app_settings WHERE key = ?").get(key) as
       | { value: string }
@@ -656,20 +675,16 @@ export class Catalog {
     return rows.map((r) => recordingSessionFromRow(r as Record<string, unknown>));
   }
 
-  coerceInterruptedSessions(): RecordingSessionRow[] {
-    const rows = this.db
-      .prepare("SELECT * FROM recording_sessions WHERE status = 'recording'")
-      .all();
-    const coerced: RecordingSessionRow[] = [];
-    for (const r of rows) {
-      const session = recordingSessionFromRow(r as Record<string, unknown>);
-      session.status = "paused";
-      session.wasInterrupted = true;
-      session.activeSegmentStartedAt = null;
-      this.upsertRecordingSession(session);
-      coerced.push(session);
-    }
-    return coerced;
+  /** Read-only lookup for boot-time crash recovery (cor-CORE.ARCHIVE-000003)
+   * -- unlike the old `coerceInterruptedSessions`, this never mutates a
+   * row itself; the caller (`recording-session.ts`'s own
+   * `coerceInterruptedSessions`) decides how to close out each session,
+   * since doing that properly means exporting its still-open segment
+   * first, an async operation this synchronous catalog layer has no
+   * business performing. */
+  listRecordingSessionsByStatus(status: RecordingSessionStatus): RecordingSessionRow[] {
+    const rows = this.db.prepare("SELECT * FROM recording_sessions WHERE status = ?").all(status);
+    return rows.map((r) => recordingSessionFromRow(r as Record<string, unknown>));
   }
 
   getInterruptedSessions(): RecordingSessionRow[] {

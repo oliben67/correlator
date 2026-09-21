@@ -94,6 +94,28 @@ async def test_recordings_export_matches_records_endpoint_content(app_and_adapte
     archived_messages = {row.text for rows in archive.sources.values() for row in rows}
     assert archived_messages == expected_messages
     assert set(archive.sources.keys()) == {"c1", "c2"}
+    assert archive.system_kinds == {"c1": "container", "c2": "container"}
+
+
+async def test_recordings_export_tags_daemon_level_records_as_host(app_and_adapter) -> None:
+    app, adapter = app_and_adapter
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with app.router.lifespan_context(app):
+            await _ingest(adapter, _log(BASE, container_id="c1", message="container line"))
+            await _ingest(adapter, _log(BASE, container_id=None, message="daemon line"))
+
+            export_response = await client.get(
+                "/recordings/export",
+                params={
+                    "docker_host": "h1",
+                    "start": _iso(BASE - timedelta(minutes=1)),
+                    "end": _iso(BASE + timedelta(minutes=1)),
+                },
+            )
+
+    archive = read_recording(export_response.content)
+    assert archive.system_kinds == {"c1": "container", "h1": "host"}
 
 
 async def test_tracks_export_extracts_the_requested_metric_field(app_and_adapter) -> None:
@@ -119,6 +141,28 @@ async def test_tracks_export_extracts_the_requested_metric_field(app_and_adapter
     archive = read_track(response.content)
     assert archive.series_name == "cpu_pct"
     assert sorted(v for _ts, v in archive.points) == [0.3, 0.4]
+    assert archive.system_kind == "container"
+
+
+async def test_tracks_export_without_container_id_is_tagged_host(app_and_adapter) -> None:
+    app, adapter = app_and_adapter
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        async with app.router.lifespan_context(app):
+            await _ingest(adapter, _metric(BASE, container_id=None, cpu_pct=0.3))
+
+            response = await client.get(
+                "/tracks/export",
+                params={
+                    "docker_host": "h1",
+                    "metric": "cpu_pct",
+                    "start": _iso(BASE - timedelta(minutes=1)),
+                    "end": _iso(BASE + timedelta(minutes=1)),
+                },
+            )
+
+    archive = read_track(response.content)
+    assert archive.system_kind == "host"
 
 
 async def test_tracks_export_rejects_an_unknown_metric_field(app_and_adapter) -> None:

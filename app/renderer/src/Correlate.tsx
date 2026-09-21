@@ -1,5 +1,6 @@
 import { useAtomValue, useSetAtom } from "jotai/react";
 import { useCallback, useEffect, useState } from "react";
+import type { DetachPanelKind, DetachViewState } from "../../lib/detach.js";
 import {
   capturePointInTimeSnapshot,
   captureRangeSnapshot,
@@ -38,7 +39,18 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export function Correlate({ sumpId }: { sumpId: string }) {
+export interface CorrelateProps {
+  sumpId: string;
+  /** RM-000029: whether the chart/log panel is currently detached into
+   * its own window -- owned by App.tsx (it must survive this component
+   * unmounting on a nav-tab switch), not local state here. */
+  chartDetached?: boolean;
+  logDetached?: boolean;
+  onDetach?: (kind: DetachPanelKind, state: DetachViewState) => void;
+}
+
+export function Correlate({ sumpId, chartDetached, logDetached, onDetach }: CorrelateProps) {
+  const view = useAtomValue(viewAtom);
   const setView = useSetAtom(viewAtom);
   const setCursorT = useSetAtom(cursorTAtom);
   const cursorT = useAtomValue(cursorTAtom);
@@ -327,10 +339,43 @@ export function Correlate({ sumpId }: { sumpId: string }) {
       {state.phase === "error" && <p role="alert">{state.message}</p>}
 
       <EventDensityLane recordTimestamps={toEventTimestamps(records)} />
-      <Chart points={toChartPoints(records, "cpu_pct", chartContainerId)} />
-      <LogPanel rows={toLogRows(records)} />
 
-      <div style={{ marginTop: "20px", padding: "12px", border: "1px solid #ccc" }}>
+      <div>
+        {onDetach && (
+          <button
+            type="button"
+            onClick={() => onDetach("chart", { sumpId, t0: view.t0, t1: view.t1, cursorT })}
+            title="Detach chart into its own window"
+            style={{ float: "right", background: "transparent", border: "none", cursor: "pointer" }}
+          >
+            ⧉
+          </button>
+        )}
+        {!chartDetached && <Chart points={toChartPoints(records, "cpu_pct", chartContainerId)} />}
+      </div>
+
+      <div>
+        {onDetach && (
+          <button
+            type="button"
+            onClick={() => onDetach("log", { sumpId, t0: view.t0, t1: view.t1, cursorT })}
+            title="Detach log panel into its own window"
+            style={{ float: "right", background: "transparent", border: "none", cursor: "pointer" }}
+          >
+            ⧉
+          </button>
+        )}
+        {!logDetached && <LogPanel rows={toLogRows(records)} />}
+      </div>
+
+      <div
+        style={{
+          marginTop: "20px",
+          padding: "12px",
+          border: "1px solid var(--border-strong)",
+          borderRadius: "var(--radius-md)",
+        }}
+      >
         <h3>Event Triggers & Scheduling</h3>
 
         <form
@@ -433,7 +478,14 @@ export function Correlate({ sumpId }: { sumpId: string }) {
         </div>
       </div>
 
-      <div style={{ marginTop: "20px", padding: "12px", border: "1px solid #ccc" }}>
+      <div
+        style={{
+          marginTop: "20px",
+          padding: "12px",
+          border: "1px solid var(--border-strong)",
+          borderRadius: "var(--radius-md)",
+        }}
+      >
         <h3>Snapshots & Sample Export</h3>
 
         <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "12px" }}>

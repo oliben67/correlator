@@ -381,6 +381,37 @@ describe("Catalog", () => {
     catalog.close();
   });
 
+  it("updateSumpConnection edits only the fields given, leaving the rest alone", () => {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump({
+      id: "sump-1",
+      name: "kept name",
+      connectionType: "local",
+      host: "old-host",
+      port: 8765,
+      status: "active",
+      authToken: "old-tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-08T00:00:00Z",
+      lastSeenAt: null,
+    });
+
+    catalog.updateSumpConnection("sump-1", { host: "new-host" });
+    let row = catalog.getSump("sump-1");
+    expect(row?.host).toBe("new-host");
+    expect(row?.port).toBe(8765);
+    expect(row?.authToken).toBe("old-tok");
+    expect(row?.name).toBe("kept name");
+
+    catalog.updateSumpConnection("sump-1", { port: 9999, authToken: "new-tok" });
+    row = catalog.getSump("sump-1");
+    expect(row?.host).toBe("new-host");
+    expect(row?.port).toBe(9999);
+    expect(row?.authToken).toBe("new-tok");
+
+    catalog.close();
+  });
+
   // cor-CORE.PROVISION-007: the switcher UI's primary-Sump selection --
   // a UI concept, distinct from SumpState's "active" (reachability).
   describe("primary sump id", () => {

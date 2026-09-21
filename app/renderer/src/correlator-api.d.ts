@@ -1,3 +1,12 @@
+// RM-000029: DetachPanelKind/DetachViewState are pure, portable types
+// (string literals and primitives only) with no Node- or DOM-specific
+// dependency, so they're imported directly from app/lib/detach.ts --
+// unlike SumpSummary below, which deliberately duplicates app/lib/
+// catalog.ts's SumpRow instead of importing it, since that one *does*
+// depend on tsconfig-incompatible types across the renderer/lib split
+// (DOM vs. Node lib).
+import type { DetachPanelKind, DetachViewState } from "../../lib/detach.js";
+
 // Mirrors the shape of app/lib/catalog.ts's SumpRow as it crosses the IPC
 // boundary (a plain serialized object, not the same type instance) --
 // deliberately not imported from app/lib/ directly, since renderer/src and
@@ -96,6 +105,30 @@ export interface DownloadResult {
   filePath: string;
 }
 
+export type SystemKind = "host" | "container";
+
+export interface ArchivedLogRow {
+  tsMs: number;
+  text: string;
+}
+
+export interface ArchivedRecording {
+  t0: number;
+  t1: number;
+  created: string;
+  sources: Record<string, ArchivedLogRow[]>;
+  systemKinds: Record<string, SystemKind>;
+}
+
+export interface ArchivedTrack {
+  t0: number;
+  t1: number;
+  created: string;
+  seriesName: string;
+  points: [number, number][];
+  systemKind: SystemKind;
+}
+
 export interface DataSourcesResult {
   data_sources: string[];
 }
@@ -158,6 +191,13 @@ export interface UninstallSumpParams {
   sumpId: string;
 }
 
+export interface UpdateSumpConnectionParams {
+  sumpId: string;
+  host?: string | null;
+  port?: number | null;
+  authToken?: string | null;
+}
+
 export interface RecordingSegmentSummary {
   segmentNumber: number;
   startedAt: string;
@@ -217,11 +257,37 @@ export interface AppPreferencesSummary {
   theme: "light" | "dark" | "system";
 }
 
+export interface AppVersionInfo {
+  version: string;
+  node: string;
+  electron: string | null;
+  chrome: string | null;
+}
+
+// RM-000029: pop-out/detach support.
+export interface OpenDetachedPanelResult {
+  opened: boolean;
+}
+
+export interface DetachedPanelClosedPayload {
+  kind: DetachPanelKind;
+}
+
+// The nav variant lets a detached sidebar drive the main window's active
+// tab (and vice versa) -- Sidebar.tsx's NavView union, inlined rather
+// than imported to avoid a renderer-component -> IPC-contract dependency.
+export type SyncMessage =
+  | { type: "view"; t0: number; t1: number }
+  | { type: "cursor"; cursorT: number | null }
+  | { type: "nav"; view: "correlate" | "sumps" | "events" | "preferences" | "about" };
+
 export interface CorrelatorApi {
   listSumps: () => Promise<SumpSummary[]>;
   queryRecords: (sumpId: string, params?: RecordsQueryParams) => Promise<RecordsPage>;
   downloadRecording: (params: DownloadRecordingParams) => Promise<DownloadResult>;
   downloadTrack: (params: DownloadTrackParams) => Promise<DownloadResult>;
+  readRecordingArchive: (filePath: string) => Promise<ArchivedRecording>;
+  readTrackArchive: (filePath: string) => Promise<ArchivedTrack>;
   listDataSources: (sumpId: string) => Promise<DataSourcesResult>;
   setDataSourcePrivacy: (params: SetDataSourcePrivacyParams) => Promise<PrivacyResult>;
   promoteDataStream: (params: PromoteDataStreamParams) => Promise<PromoteResult>;
@@ -232,6 +298,7 @@ export interface CorrelatorApi {
   getPrimarySumpId: () => Promise<string | null>;
   selectPrimarySump: (params: SelectPrimarySumpParams) => Promise<void>;
   renameSump: (params: RenameSumpParams) => Promise<SumpSummary>;
+  updateSumpConnection: (params: UpdateSumpConnectionParams) => Promise<SumpSummary>;
   uninstallSump: (params: UninstallSumpParams) => Promise<void>;
   // cor-CORE.ARCHIVE-000003: live recording session operations
   startRecordingSession: (params: { sumpId: string }) => Promise<RecordingSessionSummary>;
@@ -253,8 +320,17 @@ export interface CorrelatorApi {
     samples: unknown[];
   }) => Promise<RuleEvaluationSummary[]>;
   // cor-CORE.SHELL-000005: app preferences operations
+  getAppVersion: () => Promise<AppVersionInfo>;
   getPreferences: () => Promise<AppPreferencesSummary>;
   setPreferences: (updates: Partial<AppPreferencesSummary>) => Promise<AppPreferencesSummary>;
+  // RM-000029: pop-out/detach support.
+  openDetachedPanel: (
+    kind: DetachPanelKind,
+    state: DetachViewState,
+  ) => Promise<OpenDetachedPanelResult>;
+  onDetachedPanelClosed: (callback: (payload: DetachedPanelClosedPayload) => void) => () => void;
+  broadcastSync: (message: SyncMessage) => void;
+  onSync: (callback: (message: SyncMessage) => void) => () => void;
 }
 
 declare global {

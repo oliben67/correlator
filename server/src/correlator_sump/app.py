@@ -198,7 +198,9 @@ def create_app(
         all_records = await _fetch_all(
             "metric", docker_host, resolved_start, resolved_end, container_id=container_id
         )
-        data = build_track_archive(all_records, metric, resolved_start, resolved_end)
+        data = build_track_archive(
+            all_records, metric, resolved_start, resolved_end, container_id=container_id
+        )
         return Response(
             content=data,
             media_type="application/zip",

@@ -148,7 +148,7 @@ describe("RecordingSessionManager", () => {
     catalog.close();
   });
 
-  it("coerces crashed recording sessions to paused state on app boot", () => {
+  it("coerces crashed recording sessions to paused state on app boot", async () => {
     const catalog = new Catalog(dbPath);
     catalog.upsertSump({
       id: "sump-1",
@@ -170,11 +170,85 @@ describe("RecordingSessionManager", () => {
     });
 
     // Simulate process restart
-    const interrupted = coerceInterruptedSessions(catalog);
+    const interrupted = await coerceInterruptedSessions(catalog);
     expect(interrupted).toHaveLength(1);
     expect(interrupted[0].id).toBe("sess-crashed");
     expect(interrupted[0].status).toBe("paused");
     expect(interrupted[0].wasInterrupted).toBe(true);
+
+    catalog.close();
+  });
+
+  it("exports the crashed session's open segment instead of silently dropping it", async () => {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump({
+      id: "sump-1",
+      name: "local",
+      connectionType: "local",
+      host: "localhost",
+      port: 8080,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-16T10:00:00Z",
+      lastSeenAt: null,
+    });
+
+    startRecordingSession(catalog, {
+      id: "sess-crashed",
+      sumpId: "sump-1",
+      now: "2026-09-16T10:00:00Z",
+    });
+
+    const mockExport = async (_sumpId: string, startIso: string, endIso: string) => {
+      return { id: `rec-${startIso}-${endIso}`, filePath: `/path/${startIso}.recording` };
+    };
+
+    const interrupted = await coerceInterruptedSessions(catalog, mockExport);
+
+    expect(interrupted).toHaveLength(1);
+    const segments = JSON.parse(interrupted[0].segmentsJson);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].startedAt).toBe("2026-09-16T10:00:00Z");
+    expect(segments[0].recordingId).toBe(`rec-2026-09-16T10:00:00Z-${segments[0].stoppedAt}`);
+    expect(segments[0].filePath).toBe("/path/2026-09-16T10:00:00Z.recording");
+
+    catalog.close();
+  });
+
+  it("still marks the session paused/interrupted even when the export itself fails", async () => {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump({
+      id: "sump-1",
+      name: "local",
+      connectionType: "local",
+      host: "localhost",
+      port: 8080,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-16T10:00:00Z",
+      lastSeenAt: null,
+    });
+
+    startRecordingSession(catalog, {
+      id: "sess-crashed",
+      sumpId: "sump-1",
+      now: "2026-09-16T10:00:00Z",
+    });
+
+    const failingExport = async () => {
+      throw new Error("sump unreachable");
+    };
+
+    const interrupted = await coerceInterruptedSessions(catalog, failingExport);
+
+    expect(interrupted[0].status).toBe("paused");
+    expect(interrupted[0].wasInterrupted).toBe(true);
+    const segments = JSON.parse(interrupted[0].segmentsJson);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].recordingId).toBeUndefined();
+    expect(segments[0].filePath).toBeUndefined();
 
     catalog.close();
   });

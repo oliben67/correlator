@@ -10,9 +10,11 @@
 
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { readRecordingArchive, readTrackArchive } from "./lib/archive-reader.ts";
 import { getOrCreateToken, getOrCreateUserId } from "./lib/auth-token.ts";
 import {
   Catalog,
@@ -23,12 +25,21 @@ import {
   type RecordingSessionRow,
   type SumpRow,
 } from "./lib/catalog.ts";
+import {
+  buildDetachSearch,
+  type DetachPanelKind,
+  DetachRegistry,
+  type DetachViewState,
+  detachWindowSpec,
+} from "./lib/detach.ts";
 import { evaluateEventRules, type TelemetrySample } from "./lib/events.ts";
 import { transition } from "./lib/lifecycle.ts";
 import { installLocalSump, LOCAL_SUMP_ID, resolveServerResourcesDir } from "./lib/local-sump.ts";
 import { type AppPreferences, getPreferences, savePreferences } from "./lib/preferences.ts";
 import {
   addReference,
+  bindLiveContext,
+  canAddReferenceToProject,
   defaultProjectPath,
   ensureDefaultProject,
   loadProject,
@@ -43,6 +54,8 @@ import {
   uninstallSump,
 } from "./lib/provision.ts";
 import {
+  coerceInterruptedSessions,
+  type ExportSegmentFn,
   pauseRecordingSession,
   resumeRecordingSession,
   startRecordingSession,
@@ -61,17 +74,43 @@ export interface RecordsQueryParams {
   limit?: number;
 }
 
+export interface FakeableWebContents {
+  id: number;
+  send: (channel: string, ...args: unknown[]) => void;
+}
+
 export interface FakeableBrowserWindow {
   on: (event: string, cb: (...args: unknown[]) => void) => void;
   once: (event: string, cb: (...args: unknown[]) => void) => void;
   show: () => void;
   loadFile: (path: string, options?: Record<string, unknown>) => Promise<void>;
+  webContents: FakeableWebContents;
 }
 
 export interface ElectronApi {
-  BrowserWindow: new (options: Record<string, unknown>) => FakeableBrowserWindow;
-  ipcMain: { handle: (channel: string, handler: (...args: unknown[]) => unknown) => void };
+  BrowserWindow: {
+    new (options: Record<string, unknown>): FakeableBrowserWindow;
+    /** RM-000029: the sync-broadcast relay fans a message out to every
+     * open window except the sender -- real Electron's own static
+     * method, duck-typed here the same way the rest of this interface
+     * mirrors `electron`'s real shape. */
+    getAllWindows: () => FakeableBrowserWindow[];
+  };
+  ipcMain: {
+    handle: (channel: string, handler: (...args: unknown[]) => unknown) => void;
+    /** RM-000029: sync-broadcast is fire-and-forget pub/sub, not a
+     * request/response -- `ipcMain.on`, not `.handle`. */
+    on: (
+      channel: string,
+      handler: (event: { sender: FakeableWebContents }, ...args: unknown[]) => void,
+    ) => void;
+  };
   app: { on: (event: string, cb: (...args: unknown[]) => void) => void; quit: () => void };
+  /** cor-CORE.UI-000001: forces Chromium's own `prefers-color-scheme`
+   * reporting to match the user's explicit theme choice (`"system"`
+   * lets the OS decide). Optional so every existing fake `electronApi`
+   * in tests keeps compiling unchanged; real Electron always has this. */
+  nativeTheme?: { themeSource: "system" | "light" | "dark" };
 }
 
 export function defaultCatalogPath(): string {
@@ -259,7 +298,23 @@ async function downloadAndRegister(
   const bytes = new Uint8Array(await response.arrayBuffer());
 
   const projectPath = options.projectPath ?? defaultProjectPath();
-  const project = options.projectPath ? loadProject(options.projectPath) : ensureDefaultProject();
+  let project = options.projectPath ? loadProject(options.projectPath) : ensureDefaultProject();
+
+  // Live-project isolation (cor-CORE.PROJECT-005) applies only to an
+  // explicitly-named project -- never the default project, which must
+  // keep accepting downloads from any Sump regardless of what it
+  // already holds.
+  if (options.projectPath) {
+    const context = { sumpId: options.sumpId, dataStreamId: options.dataStreamId };
+    if (!canAddReferenceToProject(project, context)) {
+      throw new Error(
+        `project is bound to a different live context (sump ${project.context?.sumpId}, ` +
+          `data stream ${project.context?.dataStreamId}) -- cannot add a reference from ` +
+          `sump ${context.sumpId}, data stream ${context.dataStreamId}`,
+      );
+    }
+    project = bindLiveContext(project, context);
+  }
 
   const id = randomUUID();
   const filePath = join(dirname(projectPath), `${options.kind}s`, `${id}${options.fileExt}`);
@@ -279,13 +334,20 @@ async function downloadAndRegister(
         createdAt: now,
       });
     } else {
+      // A track is a single self-contained series -- its `system_kind`
+      // (unlike a recording's, which can differ per log source) is one
+      // scalar fact about the whole file, read straight out of the
+      // archive we just wrote and stored on the catalog row so the
+      // project view can separate host/container tracks without
+      // re-parsing the archive on every load.
+      const systemKind = readTrackArchive(bytes).systemKind;
       catalog.upsertTrack({
         id,
         recordingId: null,
         dataStreamId: options.dataStreamId,
         sumpId: options.sumpId,
         filePath,
-        catalogJson: "{}",
+        catalogJson: JSON.stringify({ systemKind }),
         createdAt: now,
       });
     }
@@ -297,6 +359,29 @@ async function downloadAndRegister(
   saveProject(projectPath, addReference(project, filePath));
 
   return { id, filePath };
+}
+
+/** The `ExportSegmentFn` every recording-session close point (pause,
+ * stop, an event rule's automated stop, and boot-time crash recovery)
+ * shares: export the segment as a `.recording` into the sump's own
+ * default project, via the same `downloadAndRegister` path a manual
+ * download uses. No `projectPath` is passed -- a live session has no
+ * notion of an explicitly-open project to target. */
+function makeRecordingExportSegmentFn(
+  catalogPath: string,
+  fetchFn: typeof fetch,
+  userId: string,
+): ExportSegmentFn {
+  return async (sumpId, startIso, endIso) => {
+    return downloadAndRegister(catalogPath, fetchFn, userId, {
+      sumpId,
+      dataStreamId: sumpId,
+      exportPath: "/recordings/export",
+      exportParams: { start: startIso, end: endIso },
+      fileExt: ".recording",
+      kind: "recording",
+    });
+  };
 }
 
 function formatSessionSummary(session: RecordingSessionRow) {
@@ -317,22 +402,49 @@ export interface ProvisionIpcOptions {
   isPackaged?: boolean;
   resourcesPath?: string;
   spawnFn?: SpawnFn;
+  /** RM-000029: a detached panel window loads this same `index.html`
+   * (with a `detach=<kind>` query param) via this same preload -- both
+   * are only known in main.cjs's bootstrap, same as `createWindow`'s
+   * own `CreateWindowOptions`, so they're threaded through here too. */
+  preloadPath?: string;
+  indexHtmlPath?: string;
 }
 
-export function registerIpcHandlers(
+export async function registerIpcHandlers(
   electronApi: ElectronApi,
   catalogPath: string = defaultCatalogPath(),
   fetchFn: typeof fetch = fetch,
   userId: string = getOrCreateUserId(),
   provisionOptions: ProvisionIpcOptions = {},
-): void {
-  const { isPackaged = false, resourcesPath, spawnFn = spawn } = provisionOptions;
+): Promise<void> {
+  const {
+    isPackaged = false,
+    resourcesPath,
+    spawnFn = spawn,
+    preloadPath,
+    indexHtmlPath,
+  } = provisionOptions;
+  // RM-000029: scoped to this call, not module-level -- real Electron
+  // only ever calls registerIpcHandlers once per app lifetime, so this
+  // changes nothing in production, but it means each test's fresh
+  // registerIpcHandlers() call also gets a fresh, independent registry
+  // instead of leaking open-panel state across tests.
+  const detachedPanels = new DetachRegistry<FakeableBrowserWindow>();
 
   try {
     mkdirSync(dirname(catalogPath), { recursive: true });
     const bootCatalog = new Catalog(catalogPath);
     try {
-      bootCatalog.coerceInterruptedSessions();
+      await coerceInterruptedSessions(
+        bootCatalog,
+        makeRecordingExportSegmentFn(catalogPath, fetchFn, userId),
+      );
+      // cor-CORE.UI-000001: apply the stored theme preference before the
+      // window paints, so the very first frame already matches it
+      // instead of flashing the OS-default theme first.
+      if (electronApi.nativeTheme) {
+        electronApi.nativeTheme.themeSource = getPreferences(bootCatalog).theme;
+      }
     } finally {
       bootCatalog.close();
     }
@@ -402,6 +514,16 @@ export function registerIpcHandlers(
       kind: "track",
       projectPath: params.projectPath,
     });
+  });
+
+  electronApi.ipcMain.handle("read-recording-archive", async (...args: unknown[]) => {
+    const [, filePath] = args as [unknown, string];
+    return readRecordingArchive(new Uint8Array(readFileSync(filePath)));
+  });
+
+  electronApi.ipcMain.handle("read-track-archive", async (...args: unknown[]) => {
+    const [, filePath] = args as [unknown, string];
+    return readTrackArchive(new Uint8Array(readFileSync(filePath)));
   });
 
   electronApi.ipcMain.handle("list-data-sources", async (...args: unknown[]) => {
@@ -645,6 +767,25 @@ export function registerIpcHandlers(
     }
   });
 
+  electronApi.ipcMain.handle("update-sump-connection", async (...args: unknown[]) => {
+    const [, params] = args as [
+      unknown,
+      { sumpId: string; host?: string | null; port?: number | null; authToken?: string | null },
+    ];
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      catalog.updateSumpConnection(params.sumpId, {
+        host: params.host,
+        port: params.port,
+        authToken: params.authToken,
+      });
+      return catalog.getSump(params.sumpId);
+    } finally {
+      catalog.close();
+    }
+  });
+
   electronApi.ipcMain.handle("uninstall-sump", async (...args: unknown[]) => {
     const [, params] = args as [unknown, { sumpId: string }];
     mkdirSync(dirname(catalogPath), { recursive: true });
@@ -679,16 +820,7 @@ export function registerIpcHandlers(
     try {
       const session = await pauseRecordingSession(catalog, {
         sessionId: params.sessionId,
-        exportSegmentFn: async (sumpId, startIso, endIso) => {
-          return downloadAndRegister(catalogPath, fetchFn, userId, {
-            sumpId,
-            dataStreamId: sumpId,
-            exportPath: "/recordings/export",
-            exportParams: { start: startIso, end: endIso },
-            fileExt: ".recording",
-            kind: "recording",
-          });
-        },
+        exportSegmentFn: makeRecordingExportSegmentFn(catalogPath, fetchFn, userId),
       });
       return session ? formatSessionSummary(session) : null;
     } finally {
@@ -715,16 +847,7 @@ export function registerIpcHandlers(
     try {
       const session = await stopRecordingSession(catalog, {
         sessionId: params.sessionId,
-        exportSegmentFn: async (sumpId, startIso, endIso) => {
-          return downloadAndRegister(catalogPath, fetchFn, userId, {
-            sumpId,
-            dataStreamId: sumpId,
-            exportPath: "/recordings/export",
-            exportParams: { start: startIso, end: endIso },
-            fileExt: ".recording",
-            kind: "recording",
-          });
-        },
+        exportSegmentFn: makeRecordingExportSegmentFn(catalogPath, fetchFn, userId),
       });
       return session ? formatSessionSummary(session) : null;
     } finally {
@@ -857,16 +980,7 @@ export function registerIpcHandlers(
             if (active) {
               await stopRecordingSession(catalog, {
                 sessionId: active.id,
-                exportSegmentFn: async (sumpId, startIso, endIso) => {
-                  return downloadAndRegister(catalogPath, fetchFn, userId, {
-                    sumpId,
-                    dataStreamId: sumpId,
-                    exportPath: "/recordings/export",
-                    exportParams: { start: startIso, end: endIso },
-                    fileExt: ".recording",
-                    kind: "recording",
-                  });
-                },
+                exportSegmentFn: makeRecordingExportSegmentFn(catalogPath, fetchFn, userId),
               });
             }
           }
@@ -877,6 +991,20 @@ export function registerIpcHandlers(
     } finally {
       catalog.close();
     }
+  });
+
+  // RM-000030: the real app version + runtime metadata for the About
+  // dialog -- previously a hardcoded "0.1.0" literal in the renderer,
+  // never actually read from package.json.
+  electronApi.ipcMain.handle("get-app-version", async () => {
+    const packageJsonPath = join(dirname(fileURLToPath(import.meta.url)), "package.json");
+    const pkg = JSON.parse(readFileSync(packageJsonPath, "utf8")) as { version: string };
+    return {
+      version: pkg.version,
+      node: process.versions.node,
+      electron: process.versions.electron ?? null,
+      chrome: process.versions.chrome ?? null,
+    };
   });
 
   // cor-CORE.SHELL-000005: preferences management IPC.
@@ -895,9 +1023,67 @@ export function registerIpcHandlers(
     mkdirSync(dirname(catalogPath), { recursive: true });
     const catalog = new Catalog(catalogPath);
     try {
-      return savePreferences(catalog, updates);
+      const saved = savePreferences(catalog, updates);
+      // cor-CORE.UI-000001: a live theme change takes effect immediately,
+      // not just on next launch.
+      if (updates.theme !== undefined && electronApi.nativeTheme) {
+        electronApi.nativeTheme.themeSource = saved.theme;
+      }
+      return saved;
     } finally {
       catalog.close();
+    }
+  });
+
+  // RM-000029: pop-out/detach support -- ported from cttc's `popout`
+  // handler (same index.html, a `detach=<kind>` query param, no
+  // separate HTML entry point) plus its generic sync-broadcast relay
+  // (main.js:922-970). At most one open window per panel kind
+  // (`detachedPanels`); reopening an already-open kind just refocuses it.
+  electronApi.ipcMain.handle("open-detached-panel", async (...args: unknown[]) => {
+    const [, kind, state = {}] = args as [unknown, DetachPanelKind, DetachViewState];
+    const existing = detachedPanels.get(kind);
+    if (existing) {
+      existing.show();
+      return { opened: false };
+    }
+    if (!preloadPath || !indexHtmlPath) {
+      throw new Error("open-detached-panel requires preloadPath/indexHtmlPath");
+    }
+    const spec = detachWindowSpec(kind);
+    const win = new electronApi.BrowserWindow({
+      width: spec.width,
+      height: spec.height,
+      alwaysOnTop: spec.alwaysOnTop,
+      show: false,
+      webPreferences: {
+        preload: preloadPath,
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    win.once("ready-to-show", () => win.show());
+    win.on("closed", () => {
+      detachedPanels.delete(kind);
+      // No explicit re-dock action -- the docked panel in the main
+      // window always reappears when its detached window closes, by
+      // any means (OS close, Cmd+W, crash), same as cttc's own design.
+      mainWindow?.webContents.send("detached-panel-closed", { kind });
+    });
+    detachedPanels.set(kind, win);
+    await win.loadFile(indexHtmlPath, { search: buildDetachSearch(kind, state) });
+    return { opened: true };
+  });
+
+  // Fire-and-forget pub/sub, not request/response -- every open window
+  // (main + every detached panel) both emits its own view/cursor
+  // changes on this channel and listens for every other window's.
+  electronApi.ipcMain.on("sync-broadcast", (event, ...rest: unknown[]) => {
+    const [msg] = rest;
+    for (const win of electronApi.BrowserWindow.getAllWindows()) {
+      if (win.webContents.id !== event.sender.id) {
+        win.webContents.send("sync-broadcast", msg);
+      }
     }
   });
 }

@@ -34,6 +34,36 @@ export interface StopRecordingSessionParams {
   now?: string;
 }
 
+/** Exports the segment running from `startedAt` to `now` (best effort --
+ * a failed export still closes out the segment, just without a
+ * `recordingId`/`filePath`) and appends it to `segments`. Shared by
+ * pause/stop/boot-crash-recovery, which all close out an open segment
+ * the same way. */
+async function closeSegment(
+  segments: RecordingSegment[],
+  sumpId: string,
+  startedAt: string,
+  now: string,
+  exportSegmentFn?: ExportSegmentFn,
+): Promise<void> {
+  let exportResult: { id: string; filePath: string } | null = null;
+  if (exportSegmentFn) {
+    try {
+      exportResult = await exportSegmentFn(sumpId, startedAt, now);
+    } catch {
+      // Best effort
+    }
+  }
+
+  segments.push({
+    segmentNumber: segments.length + 1,
+    startedAt,
+    stoppedAt: now,
+    recordingId: exportResult?.id,
+    filePath: exportResult?.filePath,
+  });
+}
+
 export function startRecordingSession(
   catalog: Catalog,
   params: StartRecordingSessionParams,
@@ -73,26 +103,13 @@ export async function pauseRecordingSession(
   const segments: RecordingSegment[] = JSON.parse(session.segmentsJson);
 
   if (session.activeSegmentStartedAt) {
-    let exportResult: { id: string; filePath: string } | null = null;
-    if (params.exportSegmentFn) {
-      try {
-        exportResult = await params.exportSegmentFn(
-          session.sumpId,
-          session.activeSegmentStartedAt,
-          now,
-        );
-      } catch {
-        // Best effort
-      }
-    }
-
-    segments.push({
-      segmentNumber: segments.length + 1,
-      startedAt: session.activeSegmentStartedAt,
-      stoppedAt: now,
-      recordingId: exportResult?.id,
-      filePath: exportResult?.filePath,
-    });
+    await closeSegment(
+      segments,
+      session.sumpId,
+      session.activeSegmentStartedAt,
+      now,
+      params.exportSegmentFn,
+    );
   }
 
   session.status = "paused";
@@ -133,26 +150,13 @@ export async function stopRecordingSession(
   const segments: RecordingSegment[] = JSON.parse(session.segmentsJson);
 
   if (session.status === "recording" && session.activeSegmentStartedAt) {
-    let exportResult: { id: string; filePath: string } | null = null;
-    if (params.exportSegmentFn) {
-      try {
-        exportResult = await params.exportSegmentFn(
-          session.sumpId,
-          session.activeSegmentStartedAt,
-          now,
-        );
-      } catch {
-        // Best effort
-      }
-    }
-
-    segments.push({
-      segmentNumber: segments.length + 1,
-      startedAt: session.activeSegmentStartedAt,
-      stoppedAt: now,
-      recordingId: exportResult?.id,
-      filePath: exportResult?.filePath,
-    });
+    await closeSegment(
+      segments,
+      session.sumpId,
+      session.activeSegmentStartedAt,
+      now,
+      params.exportSegmentFn,
+    );
   }
 
   session.status = "stopped";
@@ -175,6 +179,42 @@ export function getActiveRecordingSessionForSump(
   return catalog.getActiveRecordingSessionForSump(sumpId);
 }
 
-export function coerceInterruptedSessions(catalog: Catalog): RecordingSessionRow[] {
-  return catalog.coerceInterruptedSessions();
+/**
+ * Boot-time crash recovery (cor-CORE.ARCHIVE-000003): a session left in
+ * `"recording"` status when the app last exited had its data-collection
+ * cut off mid-segment. Closes out that open segment the same way
+ * `pauseRecordingSession`/`stopRecordingSession` do -- exporting it via
+ * `exportSegmentFn` before marking the session `paused`+`wasInterrupted`
+ * -- so a crash never silently drops the telemetry/logs already
+ * captured before it happened.
+ */
+export async function coerceInterruptedSessions(
+  catalog: Catalog,
+  exportSegmentFn?: ExportSegmentFn,
+): Promise<RecordingSessionRow[]> {
+  const sessions = catalog.listRecordingSessionsByStatus("recording");
+  const coerced: RecordingSessionRow[] = [];
+  for (const session of sessions) {
+    const now = new Date().toISOString();
+    const segments: RecordingSegment[] = JSON.parse(session.segmentsJson);
+
+    if (session.activeSegmentStartedAt) {
+      await closeSegment(
+        segments,
+        session.sumpId,
+        session.activeSegmentStartedAt,
+        now,
+        exportSegmentFn,
+      );
+    }
+
+    session.status = "paused";
+    session.wasInterrupted = true;
+    session.activeSegmentStartedAt = null;
+    session.segmentsJson = JSON.stringify(segments);
+
+    catalog.upsertRecordingSession(session);
+    coerced.push(session);
+  }
+  return coerced;
 }

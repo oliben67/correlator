@@ -1,19 +1,26 @@
+import { SumpStatusPill } from "./components/SumpStatusPill.js";
 import type { SumpSummary } from "./correlator-api.d.ts";
 
 export interface StatusBarProps {
+  sumps: SumpSummary[];
   primarySump: SumpSummary | null;
+  onRefresh: () => void;
+  onSelectPrimary: (sumpId: string) => void;
   recordingStatus?: "idle" | "recording" | "paused" | "stopped";
 }
 
-export function StatusBar({ primarySump, recordingStatus = "idle" }: StatusBarProps) {
-  const isConnected = primarySump?.status === "active";
-  const statusColor = isConnected ? "#28a745" : primarySump ? "#dc3545" : "#6c757d";
-
+export function StatusBar({
+  sumps,
+  primarySump,
+  onRefresh,
+  onSelectPrimary,
+  recordingStatus = "idle",
+}: StatusBarProps) {
   return (
     <footer
       style={{
         height: "28px",
-        background: "#007acc",
+        background: "var(--accent)",
         color: "#fff",
         display: "flex",
         alignItems: "center",
@@ -24,28 +31,18 @@ export function StatusBar({ primarySump, recordingStatus = "idle" }: StatusBarPr
       }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-          <span
-            style={{
-              display: "inline-block",
-              width: "8px",
-              height: "8px",
-              borderRadius: "50%",
-              background: statusColor,
-            }}
-          />
-          Sump: {primarySump ? primarySump.name : "None connected"}
-        </span>
+        <SumpStatusPill
+          sumps={sumps}
+          primarySump={primarySump}
+          onRefresh={onRefresh}
+          onSelectPrimary={onSelectPrimary}
+        />
 
         {recordingStatus !== "idle" && (
           <span>
             Recording: <strong>{recordingStatus.toUpperCase()}</strong>
           </span>
         )}
-      </div>
-
-      <div>
-        <span>Catalyst v0.27.0</span>
       </div>
     </footer>
   );

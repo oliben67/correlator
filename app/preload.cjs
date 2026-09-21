@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld("correlator", {
   queryRecords: (sumpId, params) => ipcRenderer.invoke("query-records", sumpId, params),
   downloadRecording: (params) => ipcRenderer.invoke("download-recording", params),
   downloadTrack: (params) => ipcRenderer.invoke("download-track", params),
+  readRecordingArchive: (filePath) => ipcRenderer.invoke("read-recording-archive", filePath),
+  readTrackArchive: (filePath) => ipcRenderer.invoke("read-track-archive", filePath),
   listDataSources: (sumpId) => ipcRenderer.invoke("list-data-sources", sumpId),
   setDataSourcePrivacy: (params) => ipcRenderer.invoke("set-data-source-privacy", params),
   promoteDataStream: (params) => ipcRenderer.invoke("promote-data-stream", params),
@@ -27,6 +29,7 @@ contextBridge.exposeInMainWorld("correlator", {
   getPrimarySumpId: () => ipcRenderer.invoke("get-primary-sump-id"),
   selectPrimarySump: (params) => ipcRenderer.invoke("select-primary-sump", params),
   renameSump: (params) => ipcRenderer.invoke("rename-sump", params),
+  updateSumpConnection: (params) => ipcRenderer.invoke("update-sump-connection", params),
   uninstallSump: (params) => ipcRenderer.invoke("uninstall-sump", params),
   // cor-CORE.ARCHIVE-000003: live recording session actions.
   startRecordingSession: (params) => ipcRenderer.invoke("start-recording-session", params),
@@ -42,7 +45,27 @@ contextBridge.exposeInMainWorld("correlator", {
   toggleEventRule: (params) => ipcRenderer.invoke("toggle-event-rule", params),
   deleteEventRule: (params) => ipcRenderer.invoke("delete-event-rule", params),
   evaluateEventRules: (params) => ipcRenderer.invoke("evaluate-event-rules", params),
+  // RM-000030: real app version + runtime metadata for the About dialog.
+  getAppVersion: () => ipcRenderer.invoke("get-app-version"),
   // cor-CORE.SHELL-000005: app preferences actions.
   getPreferences: () => ipcRenderer.invoke("get-preferences"),
   setPreferences: (updates) => ipcRenderer.invoke("set-preferences", updates),
+  // RM-000029: pop-out/detach support. openDetachedPanel is the only
+  // request/response call; the other three are fire-and-forget push
+  // channels (ipcRenderer.send/on, not invoke/handle) -- the
+  // cor-CORE.SHELL-002 "every channel has a matching ipcMain.handle"
+  // test only checks .invoke channels, by design, since these aren't
+  // request/response.
+  openDetachedPanel: (kind, state) => ipcRenderer.invoke("open-detached-panel", kind, state),
+  onDetachedPanelClosed: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("detached-panel-closed", listener);
+    return () => ipcRenderer.removeListener("detached-panel-closed", listener);
+  },
+  broadcastSync: (message) => ipcRenderer.send("sync-broadcast", message),
+  onSync: (callback) => {
+    const listener = (_event, message) => callback(message);
+    ipcRenderer.on("sync-broadcast", listener);
+    return () => ipcRenderer.removeListener("sync-broadcast", listener);
+  },
 });

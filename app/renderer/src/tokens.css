@@ -1,0 +1,88 @@
+/*
+ * Design tokens (cor-CORE.UI-000001): light palette on :root, dark
+ * palette under prefers-color-scheme. Values ported 1:1 from cttc's own
+ * reference palette (cttc/app/renderer/style.css:1-69) -- not invented.
+ *
+ * No [data-theme] class toggle exists here on purpose: the explicit
+ * Light/Dark/System preference (Preferences.tsx) is applied in the
+ * Electron main process via nativeTheme.themeSource, which makes
+ * Chromium itself report the forced prefers-color-scheme -- so this
+ * media query is the single source of truth for both the OS-detected
+ * case and the explicit override, matching cttc's own mechanism.
+ */
+
+:root {
+  --surface-1: #fcfcfb;
+  --surface-2: #f1f0ec;
+  --surface-3: #e7e6e0;
+  --page: #f9f9f7;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --muted: #898781;
+  --grid: #e1e0d9;
+  --baseline: #c3c2b7;
+  --border: rgba(11, 11, 11, 0.13);
+  --border-strong: rgba(11, 11, 11, 0.22);
+  --accent: #2a78d6;
+  --critical: #d03b3b;
+  --warning: #fab219;
+  --series-1: #2a78d6;
+  --series-2: #008300;
+  --series-3: #e87ba4;
+  --series-4: #eda100;
+  --series-5: #1baf7a;
+  --series-6: #eb6834;
+  --series-7: #4a3aa7;
+  --series-8: #e34948;
+  --hl-color: #eaff00;
+  --live-track-color: #22c55e;
+  --radius-sm: 5px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.12);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--text-primary);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface-1: #18181a;
+    --surface-2: #212123;
+    --surface-3: #2b2b2d;
+    --page: #0b0b0c;
+    --text-primary: #f4f4f4;
+    --text-secondary: #c3c2b7;
+    --muted: #8f8d87;
+    --grid: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255, 255, 255, 0.11);
+    --border-strong: rgba(255, 255, 255, 0.18);
+    --accent: #4a90f0;
+    --critical: #e35454;
+    --warning: #fab219;
+    --series-1: #3987e5;
+    --series-2: #008300;
+    --series-3: #d55181;
+    --series-4: #c98500;
+    --series-5: #199e70;
+    --series-6: #d95926;
+    --series-7: #9085e9;
+    --series-8: #e66767;
+    --hl-color: #eaff00;
+    --live-track-color: #22c55e;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* cor-CORE.UI-000004 (RM-000023): the real <dialog>'s backdrop -- can
+   only be styled via this pseudo-element, never via an inline style
+   prop, since it isn't part of the element's own rendered box. */
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.4);
+}
