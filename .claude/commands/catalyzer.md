@@ -3,7 +3,7 @@ description: Manage catalyst plugin installation and activation (list, activate,
 argument-hint: list | activate <name> <version|latest> | download <name> <version|latest> | deactivate <name> | upgrade <name|latest> | downgrade <name> <version>
 ---
 
-Manage catalyst plugins. Full spec: `.criterion/CODE-OF-CONDUCT.md` §3,
+Manage catalyst plugins. Full spec: `.criterion/CODE-OF-CONDUCT.md` §4,
 hard rules: `.criterion/rules/Rules-of-Rules.md` INV-10/11/12/13 (a
 plugin is never loaded unless activated here; every plugin has its own
 repository and is never sourced from the catalyst framework repository
@@ -12,7 +12,8 @@ catalyst framework's or the plugin's own installation directory).
 Input: $ARGUMENTS
 
 1. Resolve the registry: every subcommand reads
-   `plugins/<type>/catalog.md` (currently only `plugins/repository/catalog.md`)
+   `framework/kernel/plugins/<type>/catalog.md` (currently only
+   `framework/kernel/plugins/repository/catalog.md`)
    **from the catalyst framework's own repository**, not this project. If
    it isn't already available locally this session, clone
    `https://github.com/oliben67/catalyst.git` to a scratch location and

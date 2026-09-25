@@ -2,7 +2,7 @@
 #
 # Catalyst-operation dispatch tasks (create-bug, check-rules, sync-framework,
 # ...) come from Taskfile.common.yml (deployed from the catalyst repo's
-# framework/templates/Taskfile.common.template.yml — refreshed by
+# framework/kernel/templates/Taskfile.common.template.yml — refreshed by
 # /sync-framework, not hand-edited here).
 #
 # Everything below mirrors cttc's own root Taskfile.yml shape (combined
