@@ -5,7 +5,7 @@ argument-hint: <short description of the requirement> [--targets rule-id,...] [-
 
 Create a new catalyst requirement artifact. Full spec:
 `.criterion/CODE-OF-CONDUCT.md` §2/§3, template:
-`.criterion/requirements/templates/TEMPLATE-REQUIREMENT-v2.md`.
+`.criterion/requirements/templates/TEMPLATE-REQUIREMENT-v4.md`.
 Input: $ARGUMENTS
 
 This is the artifact to open when **new** product behavior needs to be
@@ -33,7 +33,9 @@ built — never a `/create-bug` for that.
    `.criterion/requirements/REQ-NNNNNN-<userid>-<short-kebab-summary>.md`
    (descriptive filename, not the bare ID) and fill in every section:
    Vetted-against-existing-rules, New domain/rules proposed (if any),
-   Source rules, Signed-off-by (resolve per `CODE-OF-CONDUCT.md` §2),
+   Source rules, Steps/Tests (`*(none yet)*` — populated later by
+   `/create-step`/`/create-test`), Signed-off-by (resolve per
+   `CODE-OF-CONDUCT.md` §2),
    Summary, Functional requirements with acceptance criteria, Business
    rules, Non-functional requirements, Design/implementation plan, Test
    plan, Open questions, Related. If a `--feature FEAT-NNNNNN` was given,

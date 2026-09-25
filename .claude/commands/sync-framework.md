@@ -12,12 +12,12 @@ Input: $ARGUMENTS
    `https://github.com/oliben67/catalyst.git` to a scratch location —
    refer to catalyst only by its repository name in anything you tell the
    user (never a local path), per `Rules-of-Rules.md` INV-1. Read its
-   `development-framework/SYNCHRONIZE.md` for the authoritative,
+   `framework/SYNCHRONIZE.md` for the authoritative,
    detailed synchronization rules before changing anything — this command
    summarizes the high-level contract but that file is canonical for edge
    cases.
 2. Resolve the target version: `latest` from that repository's
-   `development-framework/version.txt`; a specific version if given; if no
+   root `version.txt` on its `release` branch; a specific version if given; if no
    argument at all, re-sync against the currently installed version (i.e.
    repair drift rather than upgrade).
 3. Before touching any item, check the root-level `.frozen` file — skip

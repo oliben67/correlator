@@ -18,11 +18,12 @@ Input: $ARGUMENTS
    a requirement or house-keeping item instead, not a bug; say so.
 3. Determine `Domain` from the targeted rule's domain code
    (`.criterion/rules/domains/domains.md`) — never free text.
-4. Copy `.criterion/development/bugs/templates/TEMPLATE-BUG-v2.md` to
+4. Copy `.criterion/development/bugs/templates/TEMPLATE-BUG-v3.md` to
    `.criterion/development/bugs/BUG-NNNNNN-<userid>-<short-kebab-summary>.md`
    (descriptive filename, not the bare ID — `CODE-OF-CONDUCT.md` §5) and
    fill in every field: ID, filename, Status (`open`), Severity (ask if not
    given — required, no default), Opened (today), Targets, Domain, Area,
+   Steps (`*(none yet)*` — populated later by `/create-step`),
    Signed-off-by (resolve per `CODE-OF-CONDUCT.md` §2), and the
    Description/Reproduction/Expected-vs-actual/Root cause/Fix plan/Test
    plan/Related sections from what the user described.

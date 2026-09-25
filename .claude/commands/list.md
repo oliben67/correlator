@@ -1,6 +1,6 @@
 ---
 description: List catalyst artifacts, work items, rules, or templates, optionally filtered
-argument-hint: bug|req|feature|hk|meta-tag|reconciliation|epic|story|task|spike|sprint|rule|domain|template|all [--filter key=value ...]
+argument-hint: bug|req|step|test|feature|hk|meta-tag|reconciliation|epic|story|task|spike|sprint|rule|domain|template|all [--filter key=value ...]
 ---
 
 List catalyst items of the requested type. Full spec:
@@ -10,6 +10,8 @@ Input: $ARGUMENTS
 1. Resolve `<type>` to its index file:
    - `bug` → `.criterion/development/bugs/bugs.md`
    - `req`/`requirement` → `.criterion/requirements/requirements.md`
+   - `step` → `.criterion/steps/steps.md`
+   - `test` → `.criterion/tests/tests.md`
    - `feature` → `.criterion/features/features.md`
    - `hk`/`house-keeping` → `.criterion/development/house-keeping/house-keeping.md`
    - `meta-tag` → `.criterion/development/meta-tags/meta-tags.md`
