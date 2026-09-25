@@ -101,6 +101,49 @@ describe("Catalog", () => {
     catalog.close();
   });
 
+  it("persists and queries event_rules for a sump", () => {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump({
+      id: "sump-1",
+      name: "local sump",
+      connectionType: "local",
+      host: null,
+      port: 8080,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-16T00:00:00Z",
+      lastSeenAt: null,
+    });
+
+    catalog.upsertEventRule({
+      id: "ev-1",
+      sumpId: "sump-1",
+      name: "CPU High",
+      conditionType: "metric",
+      metricName: "cpu_pct",
+      operator: "gt",
+      threshold: 80,
+      pattern: null,
+      action: "start_recording",
+      enabled: true,
+      createdAt: "2026-09-16T10:00:00Z",
+    });
+
+    const rules = catalog.listEventRulesForSump("sump-1");
+    expect(rules).toHaveLength(1);
+    expect(rules[0].name).toBe("CPU High");
+    expect(rules[0].enabled).toBe(true);
+
+    catalog.toggleEventRule("ev-1", false);
+    expect(catalog.getEventRule("ev-1")?.enabled).toBe(false);
+
+    catalog.deleteEventRule("ev-1");
+    expect(catalog.listEventRulesForSump("sump-1")).toHaveLength(0);
+
+    catalog.close();
+  });
+
   it("queries every track for a given [sump_id, data_stream_id] via a single indexed lookup", () => {
     const catalog = new Catalog(dbPath);
     catalog.upsertSump({
@@ -335,6 +378,37 @@ describe("Catalog", () => {
     expect(row?.name).toBe("new name");
     expect(row?.status).toBe("active");
     expect(row?.authToken).toBe("tok");
+    catalog.close();
+  });
+
+  it("updateSumpConnection edits only the fields given, leaving the rest alone", () => {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump({
+      id: "sump-1",
+      name: "kept name",
+      connectionType: "local",
+      host: "old-host",
+      port: 8765,
+      status: "active",
+      authToken: "old-tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-08T00:00:00Z",
+      lastSeenAt: null,
+    });
+
+    catalog.updateSumpConnection("sump-1", { host: "new-host" });
+    let row = catalog.getSump("sump-1");
+    expect(row?.host).toBe("new-host");
+    expect(row?.port).toBe(8765);
+    expect(row?.authToken).toBe("old-tok");
+    expect(row?.name).toBe("kept name");
+
+    catalog.updateSumpConnection("sump-1", { port: 9999, authToken: "new-tok" });
+    row = catalog.getSump("sump-1");
+    expect(row?.host).toBe("new-host");
+    expect(row?.port).toBe(9999);
+    expect(row?.authToken).toBe("new-tok");
+
     catalog.close();
   });
 

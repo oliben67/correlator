@@ -1,6 +1,6 @@
 {
   "name": "correlator-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "correlator: correlate container telemetry with service logs on a shared clickable timeline",
   "type": "module",

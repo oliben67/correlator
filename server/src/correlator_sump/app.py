@@ -4,6 +4,7 @@ manager together into one Sump process (REQ-000003, Phase 1 skeleton)."""
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
@@ -27,12 +28,30 @@ from correlator_sump.federation import (
 )
 from correlator_sump.ingest import STREAM_KEY, IngestAdapter, run_ingest_server
 from correlator_sump.otel import SumpMetrics
-from correlator_sump.plugins import PluginManager
+from correlator_sump.plugins import BackgroundTaskFactory, PluginManager, validate_plugin_routes
 from correlator_sump.promotion import PromotionParams, promote_data_stream
 from correlator_sump.query import query_latest
 from correlator_sump.records import DEFAULT_LIMIT, query_records
 
 _AUTH = [Depends(require_token)]
+logger = logging.getLogger("correlator_sump.app")
+
+
+async def _run_isolated_background_task(name: str, factory: BackgroundTaskFactory) -> None:
+    """Run a plugin background task in an exception-isolated wrapper
+    (cor-CORE.PLUGIN-002). Prevents unhandled exceptions from crashing the
+    server process or cancelling sibling tasks."""
+    try:
+        await factory()
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.error(
+            "Background task '%s' raised an unhandled exception: %s",
+            name,
+            exc,
+            exc_info=True,
+        )
 
 
 def create_app(
@@ -65,7 +84,7 @@ def create_app(
         await plugin_manager.discover()
         server = await run_ingest_server(adapter, port=ingest_port)
         background_tasks = [
-            asyncio.create_task(factory(), name=name)
+            asyncio.create_task(_run_isolated_background_task(name, factory), name=name)
             for name, factory in plugin_manager.background_task_factories.items()
         ]
         async with server:
@@ -179,7 +198,9 @@ def create_app(
         all_records = await _fetch_all(
             "metric", docker_host, resolved_start, resolved_end, container_id=container_id
         )
-        data = build_track_archive(all_records, metric, resolved_start, resolved_end)
+        data = build_track_archive(
+            all_records, metric, resolved_start, resolved_end, container_id=container_id
+        )
         return Response(
             content=data,
             media_type="application/zip",
@@ -272,6 +293,7 @@ def create_app(
         }
 
     plugin_manager.hook.contribute_routes(app=app)
+    validate_plugin_routes(app)
 
     return app
 

@@ -31,11 +31,23 @@ import json
 import zipfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Literal
 
 RECORDING_EXT = ".recording"
 TRACK_EXT = ".track"
 
 MANIFEST_VERSION = 1
+
+# Which monitored system a source/track came from -- host telemetry is
+# never conflated with container telemetry in the correlation UI (see
+# cor-CORE.CORRELATE-00X, the multi-series project view). Additive to the
+# manifest: an archive written before this field existed has no
+# "system_kind" key at all, and is read back as "container" -- the
+# existing (untyped) default every pre-existing source/track already was,
+# since no real host-metric producer exists yet either (see the port
+# plan's own Step 0 note).
+SystemKind = Literal["host", "container"]
+DEFAULT_SYSTEM_KIND: SystemKind = "container"
 
 
 def is_sample_archive(name: str) -> bool:
@@ -54,6 +66,7 @@ class RecordingArchive:
     t1: float
     created: str
     sources: dict[str, list[ArchivedLogRow]] = field(default_factory=dict)
+    system_kinds: dict[str, SystemKind] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -63,6 +76,7 @@ class TrackArchive:
     created: str
     series_name: str
     points: list[tuple[float, float]] = field(default_factory=list)
+    system_kind: SystemKind = DEFAULT_SYSTEM_KIND
 
 
 def _manifest_hash(manifest_without_hash: dict) -> str:
@@ -79,20 +93,23 @@ def _now_iso() -> str:
 
 
 def write_recording(
-    t0: float, t1: float, log_sources: list[tuple[str, list[tuple[float, str]]]]
+    t0: float, t1: float, log_sources: list[tuple[str, SystemKind, list[tuple[float, str]]]]
 ) -> bytes:
-    """`log_sources` is `(name, [(ts_ms, text), ...])` per source (e.g.
-    one per container). Sources with no rows are skipped."""
+    """`log_sources` is `(name, system_kind, [(ts_ms, text), ...])` per
+    source (e.g. one per container, or the host). Sources with no rows
+    are skipped."""
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
         sources_meta: list[dict] = []
-        for i, (name, rows) in enumerate(log_sources):
+        for i, (name, system_kind, rows) in enumerate(log_sources):
             if not rows:
                 continue
             fn = f"logs/{i}.jsonl"
             lines = "\n".join(json.dumps({"ts": ts, "text": text}) for ts, text in rows)
             z.writestr(fn, lines)
-            sources_meta.append({"name": name, "file": fn, "count": len(rows)})
+            sources_meta.append(
+                {"name": name, "file": fn, "count": len(rows), "system_kind": system_kind}
+            )
 
         manifest = {
             "version": MANIFEST_VERSION,
@@ -113,6 +130,7 @@ def read_recording(data: bytes) -> RecordingArchive:
         manifest.pop("integrity_sha256", None)
 
         sources: dict[str, list[ArchivedLogRow]] = {}
+        system_kinds: dict[str, SystemKind] = {}
         for meta in manifest["sources"]:
             content = z.read(meta["file"])
             rows = []
@@ -122,16 +140,24 @@ def read_recording(data: bytes) -> RecordingArchive:
                 row = json.loads(line)
                 rows.append(ArchivedLogRow(ts_ms=row["ts"], text=row.get("text", "")))
             sources[meta["name"]] = rows
+            system_kinds[meta["name"]] = meta.get("system_kind", DEFAULT_SYSTEM_KIND)
 
         return RecordingArchive(
             t0=manifest["from"],
             t1=manifest["to"],
             created=manifest.get("created", ""),
             sources=sources,
+            system_kinds=system_kinds,
         )
 
 
-def write_track(t0: float, t1: float, series_name: str, points: list[tuple[float, float]]) -> bytes:
+def write_track(
+    t0: float,
+    t1: float,
+    series_name: str,
+    points: list[tuple[float, float]],
+    system_kind: SystemKind = DEFAULT_SYSTEM_KIND,
+) -> bytes:
     """`points` is `[(ts_ms, value), ...]` for the one series this track
     captures."""
     buf = io.BytesIO()
@@ -146,6 +172,7 @@ def write_track(t0: float, t1: float, series_name: str, points: list[tuple[float
             "to": t1,
             "created": _now_iso(),
             "series_name": series_name,
+            "system_kind": system_kind,
             "file": fn,
         }
         manifest["integrity_sha256"] = _manifest_hash(manifest)
@@ -167,4 +194,5 @@ def read_track(data: bytes) -> TrackArchive:
             created=manifest.get("created", ""),
             series_name=manifest["series_name"],
             points=points,
+            system_kind=manifest.get("system_kind", DEFAULT_SYSTEM_KIND),
         )

@@ -1,6 +1,7 @@
 {
   "project_name": "correlator",
-  "framework_version": "0.25.0",
+  "framework_version": "0.34.0",
+  "module": "software-engineering",
   "agent": "claude-code",
   "agent-source": "/Users/oliviersteck/.claude/projects/-Users-oliviersteck-sources-correlator/criterion",
   "repoed": true,
@@ -9,5 +10,5 @@
   "created_by": "olivier-steck",
   "criterion_branch": "olivier-steck.criterion",
   "created": "2026-08-23",
-  "updated": "2026-09-12"
+  "updated": "2026-09-25"
 }

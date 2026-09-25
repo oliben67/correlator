@@ -58,6 +58,7 @@ if (!gotSingleInstanceLock) {
 async function bootstrap() {
   const { createWindow, registerIpcHandlers, registerAppLifecycle, classifyOpenedFile } =
     await import("./shell.ts");
+  const { buildMenuTemplate } = await import("./lib/menu.ts");
   classifyOpenedFileRef = classifyOpenedFile;
   for (const filePath of pendingOpenFilePaths.splice(0)) {
     handleOpenedPath(filePath);
@@ -66,18 +67,25 @@ async function bootstrap() {
   registerAppLifecycle(electron);
 
   electron.app.whenReady().then(async () => {
+    // RM-000028: role-based items only (undo/copy/toggleDevTools/etc.) --
+    // Electron wires their real behavior itself, so this is safe to set
+    // before the window exists.
+    electron.Menu.setApplicationMenu(electron.Menu.buildFromTemplate(buildMenuTemplate()));
+
     // cor-CORE.PROVISION-006: isPackaged/resourcesPath are only known
     // here (real electron.app state) -- threaded through so the
     // install-local-sump/install-remote-sump handlers can resolve the
-    // bundled server/ resources directory.
-    registerIpcHandlers(electron, undefined, undefined, undefined, {
+    // bundled server/ resources directory. RM-000029: preloadPath/
+    // indexHtmlPath are threaded the same way, for open-detached-panel.
+    const preloadPath = path.join(__dirname, "preload.cjs");
+    const indexHtmlPath = path.join(__dirname, "renderer", "index.html");
+    await registerIpcHandlers(electron, undefined, undefined, undefined, {
       isPackaged: electron.app.isPackaged,
       resourcesPath: process.resourcesPath,
+      preloadPath,
+      indexHtmlPath,
     });
-    mainWindowRef = await createWindow(electron, {
-      preloadPath: path.join(__dirname, "preload.cjs"),
-      indexHtmlPath: path.join(__dirname, "renderer", "index.html"),
-    });
+    mainWindowRef = await createWindow(electron, { preloadPath, indexHtmlPath });
   });
 }
 

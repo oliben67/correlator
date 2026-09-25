@@ -13,16 +13,22 @@ Input: $ARGUMENTS
 3. If `<role>` isn't one of the roles listed in
    `.criterion/IAM/roles/roles.json`, ask whether to use an
    existing role or run `/role-add` for `<role>` first.
-4. Append a new object to the `users` array:
+4. Generate a `userid` (`rules/Rules-of-Rules.md` §11, INV-26): draw 8
+   characters from `[A-Za-z0-9]` via a cryptographically-secure random
+   source; redraw if the result contains no uppercase letter; check
+   against every existing `userid` already in
+   `.criterion/IAM/users/users.json`; redraw from scratch on any
+   collision.
+5. Append a new object to the `users` array:
    `{"name": "<name>", "roles": ["<role>"], "registered": "<today>",
-   "active": true, "notes": ""}`.
-5. Append a journal entry per `CODE-OF-CONDUCT.md` §9 /
+   "active": true, "notes": "", "userid": "<generated>"}`.
+6. Append a journal entry per `CODE-OF-CONDUCT.md` §9 /
    `rules/Rules-of-Rules.md` §12 (`action: "create"`, `targets: []`,
    `files` = `IAM/users/users.json` with real `git hash-object -w`
    before/after hashes).
-6. Report the result. If this is the project's first registered user,
-   note that the hard "at least one active user" requirement (INV-16) is
-   now satisfied.
+7. Report the result, including the assigned `userid`. If this is the
+   project's first registered user, note that the hard "at least one
+   active user" requirement (INV-16) is now satisfied.
 
 Do not commit or push — leave changes unstaged unless the user asks
 otherwise. This role model is advisory, not access control — catalyst has

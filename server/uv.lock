@@ -1126,7 +1126,7 @@ wheels = [
 
 [[package]]
 name = "sump-plugin-logstream"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "../sump-plugin-logstream" }
 dependencies = [
     { name = "correlator-sump" },
@@ -1150,7 +1150,7 @@ dev = [
 
 [[package]]
 name = "sump-plugin-ssh"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "../sump-plugin-ssh" }
 dependencies = [
     { name = "correlator-sump" },

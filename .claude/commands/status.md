@@ -8,7 +8,7 @@ Update an artifact/work-item's `Status` field. Full spec:
 Input: $ARGUMENTS
 
 1. Resolve `<artefact-id>` to its file (search
-   `.criterion/{development,requirements,features,reconciliations}/**`,
+   `.criterion/{development,requirements,steps,tests,features,reconciliations}/**`,
    plus `.criterion/work-items/**` if a project-management plugin has
    deployed it — `rules/Rules-of-Rules.md` §8/§17). If it doesn't
    resolve, state plainly that the artifact cannot be found — do not
@@ -16,7 +16,9 @@ Input: $ARGUMENTS
 2. Look up that artifact type's valid `Status` values (each template's
    `| **Status** |` row documents its own valid set, e.g. bugs:
    open/in-progress/fixed/wontfix/duplicate-of; requirements:
-   proposed/approved/in-progress/done/rejected; etc.).
+   proposed/approved/in-progress/done/rejected; steps:
+   planned/in-progress/done/abandoned; tests:
+   proposed/passing/failing/blocked; etc.).
 3. If `<status>` is one of the valid values for that type, update the
    `Status` field in place and update the corresponding index row if it
    also carries a status column.
@@ -24,10 +26,13 @@ Input: $ARGUMENTS
    and note in your report that it's a forced, non-standard value; without
    `force`, refuse — report that the status change is impossible and leave
    the artifact untouched.
-5. Before marking a bug "fixed" or a requirement "done", check
-   `CODE-OF-CONDUCT.md` §6's closing bar (bug: test-plan item landed;
-   requirement: acceptance criteria + rule targets reflected in
-   implementation and tests) — flag if it isn't actually met yet rather
+5. Before marking a bug "fixed", a requirement "done", a step "done", or
+   a test "passing", check `CODE-OF-CONDUCT.md` §7's closing bar (bug:
+   test-plan item landed and every step in its `Steps` field
+   `done`/`abandoned`; requirement: acceptance criteria + rule targets
+   reflected in implementation and tests, and every step in its `Steps`
+   field `done`/`abandoned`; step: Verification filled in; test: Actual
+   outcome reflects a real run) — flag if it isn't actually met yet rather
    than silently allowing the status change.
 6. If the status actually changed (step 3 or a forced step 4, not a
    refusal), append a journal entry per `CODE-OF-CONDUCT.md` §9 /

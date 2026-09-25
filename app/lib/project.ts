@@ -19,9 +19,32 @@ export interface VirtualFolder {
   folders: VirtualFolder[];
 }
 
+/** Which live Sump/DataStream a project is bound to (cor-CORE.PROJECT-005)
+ * -- both fields already exist on every `TrackRow`/`RecordingRow` in the
+ * catalog, so a project's context is checked against them, never stored
+ * redundantly there. `null`/absent means unbound: a project (in
+ * particular the always-present default project) with no context accepts
+ * a reference from any Sump. */
+export interface ProjectContext {
+  sumpId: string;
+  dataStreamId: string;
+}
+
+/** Per-project, per-reference display settings -- delay offset and
+ * visibility are properties of *viewing* a track inside this project,
+ * not of the track itself, since the same track file can be referenced
+ * by multiple projects with different settings each. Keyed by the
+ * reference's path, matching `Project.references`. */
+export interface TrackViewState {
+  delayMs?: number;
+  visible?: boolean;
+}
+
 export interface Project {
   references: string[];
   folders: VirtualFolder[];
+  trackSettings?: Record<string, TrackViewState>;
+  context?: ProjectContext | null;
 }
 
 export function createProject(): Project {
@@ -42,10 +65,80 @@ function removeFromFolders(folders: VirtualFolder[], path: string): VirtualFolde
 }
 
 export function removeReference(project: Project, path: string): Project {
+  const trackSettings = project.trackSettings ? { ...project.trackSettings } : undefined;
+  if (trackSettings) delete trackSettings[path];
   return {
+    ...project,
     references: project.references.filter((ref) => ref !== path),
     folders: removeFromFolders(project.folders, path),
+    trackSettings,
   };
+}
+
+/** Sets `path`'s display-time delay shift within `project` -- a pure
+ * display transform applied to that reference's points/log rows before
+ * they reach the shared viewport, never a mutation of the referenced
+ * file itself. */
+export function setTrackDelay(project: Project, path: string, delayMs: number): Project {
+  return {
+    ...project,
+    trackSettings: {
+      ...project.trackSettings,
+      [path]: { ...project.trackSettings?.[path], delayMs },
+    },
+  };
+}
+
+export function setTrackVisibility(project: Project, path: string, visible: boolean): Project {
+  return {
+    ...project,
+    trackSettings: {
+      ...project.trackSettings,
+      [path]: { ...project.trackSettings?.[path], visible },
+    },
+  };
+}
+
+export function getTrackViewState(project: Project, path: string): TrackViewState {
+  return project.trackSettings?.[path] ?? {};
+}
+
+export function contextsEqual(
+  a: ProjectContext | null | undefined,
+  b: ProjectContext | null | undefined,
+): boolean {
+  if (!a || !b) return false;
+  return a.sumpId === b.sumpId && a.dataStreamId === b.dataStreamId;
+}
+
+/** True when `project` has no live context bound yet, or is already
+ * bound to exactly `context` -- false when it's bound to a *different*
+ * one. The binding itself persists independent of whether any
+ * references currently remain in the project (removing every reference
+ * does not implicitly unbind it). */
+export function canBindContext(project: Project, context: ProjectContext): boolean {
+  return !project.context || contextsEqual(project.context, context);
+}
+
+/** Binds `project` to `context` the first time a reference is added
+ * under it; a no-op once a context is already set (rebinding is never
+ * silent -- cor-CORE.PROJECT-005 has no "switch context" operation). */
+export function bindLiveContext(project: Project, context: ProjectContext): Project {
+  if (project.context) return project;
+  return { ...project, context };
+}
+
+/** The isolation check `downloadAndRegister` runs for an explicitly-named
+ * project (never the default project, which must keep accepting
+ * downloads from any Sump). */
+export function canAddReferenceToProject(project: Project, context: ProjectContext): boolean {
+  return canBindContext(project, context);
+}
+
+export type ProjectMode = "unbound" | "live";
+
+export function projectMode(project: Project): ProjectMode {
+  return project.context ? "live" : "unbound";
 }
 
 function insertIntoPath(

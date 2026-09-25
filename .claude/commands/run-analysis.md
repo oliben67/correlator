@@ -8,7 +8,7 @@ Run the catalyst analysis playbook. Full spec:
 Input: $ARGUMENTS
 
 1. `ANALYSIS-PLAYBOOK.md` lives in the catalyst framework's own repository
-   (`development-framework/ANALYSIS-PLAYBOOK.md`), not this project. If
+   (`framework/ANALYSIS-PLAYBOOK.md`), not this project. If
    it isn't already available locally this session, clone
    `https://github.com/oliben67/catalyst.git` to a scratch location and
    read it from there — refer to catalyst only by its repository name in

@@ -1,6 +1,6 @@
 [project]
 name = "sump-plugin-logstream"
-version = "0.1.0"
+version = "0.2.0"
 description = "correlator Sump plugin: log-sump logstream data-stream relay (cor-CORE.DATASTREAM-003)"
 requires-python = ">=3.12"
 dependencies = [
