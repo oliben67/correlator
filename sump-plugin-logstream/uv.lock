@@ -193,7 +193,7 @@ wheels = [
 
 [[package]]
 name = "correlator-sump"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "../server" }
 dependencies = [
     { name = "fastapi" },
@@ -823,7 +823,7 @@ wheels = [
 
 [[package]]
 name = "sump-plugin-logstream"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "correlator-sump" },

@@ -8,4 +8,4 @@ FastAPI app (`app`). No plugins registered yet -- the first one (SSH)
 ships in Phase 3.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"

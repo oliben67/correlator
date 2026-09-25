@@ -1,6 +1,6 @@
 [project]
 name = "sump-plugin-ssh"
-version = "0.2.0"
+version = "0.2.1"
 description = "correlator Sump plugin: SSH/local data-stream transport (cor-CORE.DATASTREAM-002)"
 requires-python = ">=3.12"
 dependencies = [

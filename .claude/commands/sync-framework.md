@@ -4,7 +4,7 @@ argument-hint: [latest|<version>] [--force <type>|<item-id>|all]
 ---
 
 Synchronize the deployed catalyst framework. Full spec:
-`.criterion/CODE-OF-CONDUCT.md` §3, `.criterion/version.txt` for
+`.criterion/CODE-OF-CONDUCT.md` §4, `.criterion/version.txt` for
 the currently installed version.
 Input: $ARGUMENTS
 
@@ -12,7 +12,7 @@ Input: $ARGUMENTS
    `https://github.com/oliben67/catalyst.git` to a scratch location —
    refer to catalyst only by its repository name in anything you tell the
    user (never a local path), per `Rules-of-Rules.md` INV-1. Read its
-   `framework/SYNCHRONIZE.md` for the authoritative,
+   `framework/kernel/SYNCHRONIZE.md` for the authoritative,
    detailed synchronization rules before changing anything — this command
    summarizes the high-level contract but that file is canonical for edge
    cases.
