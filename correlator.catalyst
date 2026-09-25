@@ -1,6 +1,6 @@
 {
   "project_name": "correlator",
-  "framework_version": "0.34.0",
+  "kernel_version": "0.35.2",
   "module": "software-engineering",
   "agent": "claude-code",
   "agent-source": "/Users/oliviersteck/.claude/projects/-Users-oliviersteck-sources-correlator/criterion",
