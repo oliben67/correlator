@@ -7,7 +7,9 @@ import { Correlate } from "./Correlate.js";
 import { DataStreamPicker } from "./components/DataStreamPicker.js";
 import { useSyncedView } from "./correlate/useSyncedView.js";
 import type { SumpSummary } from "./correlator-api.js";
+import { notify } from "./notifications.js";
 import { Preferences } from "./Preferences.js";
+import { type RecordingStatusReport, statusBarRecordingStatus } from "./recordingStatus.js";
 import { type NavView, Sidebar } from "./Sidebar.js";
 import { StatusBar } from "./StatusBar.js";
 import { SumpSwitcher } from "./SumpSwitcher.js";
@@ -24,6 +26,10 @@ export function App() {
   // so a detached chart/log panel stays hidden in the docked view even
   // if the user switches nav tabs away from "correlate" and back.
   const [detachedKinds, setDetachedKinds] = useState<Set<DetachPanelKind>>(new Set());
+  // BUG-000005: last recording status Correlate reported. Kept here, not
+  // reset when Correlate unmounts on a tab switch -- the session keeps
+  // recording server-side, and the status bar must keep saying so.
+  const [recordingReport, setRecordingReport] = useState<RecordingStatusReport | null>(null);
 
   useSyncedView();
 
@@ -116,6 +122,7 @@ export function App() {
                       chartDetached={detachedKinds.has("chart")}
                       logDetached={detachedKinds.has("log")}
                       onDetach={handleDetach}
+                      onRecordingStatusChange={setRecordingReport}
                     />
                   ) : (
                     activeSump && <p>{activeSump.name} isn't reporting from any docker host yet.</p>
@@ -147,6 +154,7 @@ export function App() {
                       chartDetached={detachedKinds.has("chart")}
                       logDetached={detachedKinds.has("log")}
                       onDetach={handleDetach}
+                      onRecordingStatusChange={setRecordingReport}
                     />
                   ) : (
                     <p>Connect a Sump to manage event triggers.</p>
@@ -165,12 +173,21 @@ export function App() {
       <StatusBar
         sumps={selectable ?? []}
         primarySump={activeSump}
+        recordingStatus={statusBarRecordingStatus(recordingReport, activeSump?.id ?? null)}
         onRefresh={refresh}
         onSelectPrimary={(sumpId) => {
+          const name = selectable?.find((s) => s.id === sumpId)?.name ?? sumpId;
           window.correlator
             .selectPrimarySump({ sumpId })
-            .then(refresh)
-            .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)));
+            .then(() => {
+              notify(`Switched primary Sump to "${name}"`);
+              refresh();
+            })
+            .catch((err: unknown) => {
+              const message = err instanceof Error ? err.message : String(err);
+              setError(message);
+              notify(`Could not switch to "${name}": ${message}`, "error");
+            });
         }}
       />
     </div>

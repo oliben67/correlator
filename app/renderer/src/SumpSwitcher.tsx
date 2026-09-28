@@ -4,6 +4,7 @@ import { Button } from "./components/Button.js";
 import { Dialog } from "./components/Dialog.js";
 import { Panel } from "./components/Panel.js";
 import type { SumpSummary } from "./correlator-api.js";
+import { notify } from "./notifications.js";
 
 // cor-CORE.PROVISION-007: renders every live Sump with a "Set as primary"
 // action, an inline rename control, an Edit-connection-details control
@@ -39,14 +40,19 @@ export function SumpSwitcher({
 
   const pending = action.phase === "pending";
 
-  async function run(work: () => Promise<void>) {
+  // cor-CORE.SHELL-000007: every action's outcome is also a notification;
+  // the inline error stays next to the list, where the user retries.
+  async function run(work: () => Promise<void>, success: string, failure: string) {
     setAction({ phase: "pending" });
     try {
       await work();
       setAction({ phase: "idle" });
+      notify(success);
       onChange();
     } catch (err) {
-      setAction({ phase: "error", message: errorMessage(err) });
+      const message = errorMessage(err);
+      setAction({ phase: "error", message });
+      notify(`${failure}: ${message}`, "error");
     }
   }
 
@@ -63,10 +69,17 @@ export function SumpSwitcher({
                     variant="primary"
                     disabled={pending}
                     onClick={() =>
-                      run(async () => {
-                        await window.correlator.renameSump({ sumpId: sump.id, name: renameValue });
-                        setRenaming(null);
-                      })
+                      run(
+                        async () => {
+                          await window.correlator.renameSump({
+                            sumpId: sump.id,
+                            name: renameValue,
+                          });
+                          setRenaming(null);
+                        },
+                        `Renamed "${sump.name}" to "${renameValue}"`,
+                        `Could not rename "${sump.name}"`,
+                      )
                     }
                   >
                     Save
@@ -82,9 +95,13 @@ export function SumpSwitcher({
                   <Button
                     disabled={pending || sump.id === primaryId}
                     onClick={() =>
-                      run(async () => {
-                        await window.correlator.selectPrimarySump({ sumpId: sump.id });
-                      })
+                      run(
+                        async () => {
+                          await window.correlator.selectPrimarySump({ sumpId: sump.id });
+                        },
+                        `Switched primary Sump to "${sump.name}"`,
+                        `Could not switch to "${sump.name}"`,
+                      )
                     }
                   >
                     Set as primary
@@ -103,9 +120,13 @@ export function SumpSwitcher({
                       variant="danger"
                       disabled={pending}
                       onClick={() =>
-                        run(async () => {
-                          await window.correlator.uninstallSump({ sumpId: sump.id });
-                        })
+                        run(
+                          async () => {
+                            await window.correlator.uninstallSump({ sumpId: sump.id });
+                          },
+                          `${uninstallLabel(sump)}ed "${sump.name}"`,
+                          `Could not ${uninstallLabel(sump).toLowerCase()} "${sump.name}"`,
+                        )
                       }
                     >
                       {uninstallLabel(sump)}
@@ -136,11 +157,15 @@ export function SumpSwitcher({
         pending={pending}
         onClose={() => setEditing(null)}
         onSave={(updates) =>
-          run(async () => {
-            if (!editing) return;
-            await window.correlator.updateSumpConnection({ sumpId: editing.id, ...updates });
-            setEditing(null);
-          })
+          run(
+            async () => {
+              if (!editing) return;
+              await window.correlator.updateSumpConnection({ sumpId: editing.id, ...updates });
+              setEditing(null);
+            },
+            `Updated "${editing?.name}" connection details`,
+            `Could not update "${editing?.name}"`,
+          )
         }
       />
     </div>

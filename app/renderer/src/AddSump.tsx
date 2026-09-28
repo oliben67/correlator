@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "./components/Button.js";
 import { Panel } from "./components/Panel.js";
+import { notify } from "./notifications.js";
 
 // cor-CORE.PROVISION-006: the interactive "Add Sump" chooser, shown by
 // App.tsx whenever the catalog has no live Sump.
@@ -66,9 +67,12 @@ export function AddSump({
               setAction({ phase: "pending" });
               try {
                 await window.correlator.connectExistingSump(params);
+                notify("Connected to the Sump");
                 onSumpAdded();
               } catch (err) {
-                setAction({ phase: "error", message: errorMessage(err) });
+                const message = errorMessage(err);
+                setAction({ phase: "error", message });
+                notify(`Could not connect to the Sump: ${message}`, "error");
               }
             }}
           />
@@ -85,18 +89,24 @@ export function AddSump({
               setAction({ phase: "pending" });
               try {
                 await window.correlator.installLocalSump();
+                notify("Local Sump installed");
                 onSumpAdded();
               } catch (err) {
-                setAction({ phase: "error", message: errorMessage(err) });
+                const message = errorMessage(err);
+                setAction({ phase: "error", message });
+                notify(`Could not install the local Sump: ${message}`, "error");
               }
             }}
             onInstallRemote={async (params) => {
               setAction({ phase: "pending" });
               try {
                 await window.correlator.installRemoteSump(params);
+                notify("Remote Sump installed");
                 onSumpAdded();
               } catch (err) {
-                setAction({ phase: "error", message: errorMessage(err) });
+                const message = errorMessage(err);
+                setAction({ phase: "error", message });
+                notify(`Could not install the remote Sump: ${message}`, "error");
               }
             }}
           />

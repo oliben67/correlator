@@ -26,6 +26,8 @@ import type {
   RuleEvaluationSummary,
   SumpRecord,
 } from "./correlator-api.js";
+import { notify } from "./notifications.js";
+import type { RecordingStatusReport } from "./recordingStatus.js";
 
 // cor-CORE.CORRELATE-006: wires the correlation engine to real data.
 // cor-CORE.ARCHIVE-003: adds live recording session state control toolbar
@@ -47,9 +49,18 @@ export interface CorrelateProps {
   chartDetached?: boolean;
   logDetached?: boolean;
   onDetach?: (kind: DetachPanelKind, state: DetachViewState) => void;
+  /** BUG-000005: reports this view's recording-session status so App can
+   * show it in the status bar (cor-CORE.SHELL-000004 §2). */
+  onRecordingStatusChange?: (report: RecordingStatusReport) => void;
 }
 
-export function Correlate({ sumpId, chartDetached, logDetached, onDetach }: CorrelateProps) {
+export function Correlate({
+  sumpId,
+  chartDetached,
+  logDetached,
+  onDetach,
+  onRecordingStatusChange,
+}: CorrelateProps) {
   const view = useAtomValue(viewAtom);
   const setView = useSetAtom(viewAtom);
   const setCursorT = useSetAtom(cursorTAtom);
@@ -67,7 +78,6 @@ export function Correlate({ sumpId, chartDetached, logDetached, onDetach }: Corr
   const [viewFormat, setViewFormat] = useState<"json" | "raw">("json");
   const [snapStartIso, setSnapStartIso] = useState("");
   const [snapEndIso, setSnapEndIso] = useState("");
-  const [exportMessage, setExportMessage] = useState<string | null>(null);
 
   // New Rule Form State
   const [ruleName, setRuleName] = useState("");
@@ -133,12 +143,22 @@ export function Correlate({ sumpId, chartDetached, logDetached, onDetach }: Corr
     loadEventRules();
   }, [load, loadSession, loadEventRules, setCursorT]);
 
+  // BUG-000005: tag with the session's own Sump when there is one, so a
+  // session still held from before a Sump switch is never attributed to
+  // the new Sump.
+  const reportedSumpId = session?.sumpId ?? sumpId;
+  const reportedStatus = session?.status ?? "idle";
+  useEffect(() => {
+    onRecordingStatusChange?.({ sumpId: reportedSumpId, status: reportedStatus });
+  }, [onRecordingStatusChange, reportedSumpId, reportedStatus]);
+
   const handleStartSession = async () => {
     try {
       const res = await window.correlator.startRecordingSession({ sumpId });
       setSession(res);
+      notify("Recording started");
     } catch (err) {
-      setState({ phase: "error", message: errorMessage(err) });
+      notify(`Could not start recording: ${errorMessage(err)}`, "error");
     }
   };
 
@@ -147,8 +167,9 @@ export function Correlate({ sumpId, chartDetached, logDetached, onDetach }: Corr
     try {
       const res = await window.correlator.pauseRecordingSession({ sessionId: session.id });
       setSession(res);
+      notify("Recording paused");
     } catch (err) {
-      setState({ phase: "error", message: errorMessage(err) });
+      notify(`Could not pause recording: ${errorMessage(err)}`, "error");
     }
   };
 
@@ -157,8 +178,9 @@ export function Correlate({ sumpId, chartDetached, logDetached, onDetach }: Corr
     try {
       const res = await window.correlator.resumeRecordingSession({ sessionId: session.id });
       setSession(res);
+      notify("Recording resumed");
     } catch (err) {
-      setState({ phase: "error", message: errorMessage(err) });
+      notify(`Could not resume recording: ${errorMessage(err)}`, "error");
     }
   };
 
@@ -167,8 +189,9 @@ export function Correlate({ sumpId, chartDetached, logDetached, onDetach }: Corr
     try {
       const res = await window.correlator.stopRecordingSession({ sessionId: session.id });
       setSession(res);
+      notify("Recording stopped");
     } catch (err) {
-      setState({ phase: "error", message: errorMessage(err) });
+      notify(`Could not stop recording: ${errorMessage(err)}`, "error");
     }
   };
 
@@ -224,7 +247,6 @@ export function Correlate({ sumpId, chartDetached, logDetached, onDetach }: Corr
     const targetMs = cursorT ?? Date.now();
     const snap = capturePointInTimeSnapshot(records, sumpId, targetMs, 60000);
     setActiveSnapshot(snap);
-    setExportMessage(null);
   };
 
   const handleRangeSnapshot = (e: React.FormEvent) => {
@@ -232,7 +254,6 @@ export function Correlate({ sumpId, chartDetached, logDetached, onDetach }: Corr
     if (!snapStartIso || !snapEndIso) return;
     const snap = captureRangeSnapshot(records, sumpId, snapStartIso, snapEndIso);
     setActiveSnapshot(snap);
-    setExportMessage(null);
   };
 
   const handleCopySnapshot = async () => {
@@ -243,9 +264,9 @@ export function Correlate({ sumpId, chartDetached, logDetached, onDetach }: Corr
         : formatSnapshotRaw(activeSnapshot);
     try {
       await navigator.clipboard.writeText(text);
-      setExportMessage("Copied to clipboard!");
+      notify("Snapshot copied to clipboard");
     } catch {
-      setExportMessage("Failed to copy to clipboard.");
+      notify("Could not copy the snapshot to the clipboard", "error");
     }
   };
 
@@ -258,9 +279,9 @@ export function Correlate({ sumpId, chartDetached, logDetached, onDetach }: Corr
         start: activeSnapshot.startIso,
         end: activeSnapshot.endIso,
       });
-      setExportMessage(`Exported snapshot to ${res.filePath}`);
+      notify(`Snapshot exported to ${res.filePath}`);
     } catch (err) {
-      setExportMessage(`Export failed: ${errorMessage(err)}`);
+      notify(`Snapshot export failed: ${errorMessage(err)}`, "error");
     }
   };
 
@@ -545,12 +566,6 @@ export function Correlate({ sumpId, chartDetached, logDetached, onDetach }: Corr
                 Export as .recording Archive
               </button>
             </div>
-
-            {exportMessage && (
-              <p style={{ fontSize: "0.9em", color: "#0d6efd", marginBottom: "8px" }}>
-                {exportMessage}
-              </p>
-            )}
 
             <pre
               style={{
