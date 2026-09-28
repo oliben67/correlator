@@ -101,7 +101,9 @@ export function StatusBar({
         style={{
           background: "transparent",
           border: "none",
-          color: "#fff",
+          // BUG-000006: inherit the footer's text color, no new literal
+          // (cor-CORE.UI-000001).
+          color: "inherit",
           cursor: "pointer",
           font: "inherit",
           flexShrink: 0,

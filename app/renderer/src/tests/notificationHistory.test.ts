@@ -93,6 +93,13 @@ describe("cor-CORE.SHELL-000007: StatusBar message area", () => {
     expect(markup).toContain("History (1)");
   });
 
+  it("BUG-000006: the History button inherits the footer color (no new literal)", () => {
+    const markup = renderBar();
+    const historyButton = markup.match(/<button[^>]*>History<\/button>/)?.[0] ?? "";
+    expect(historyButton).toContain("color:inherit");
+    expect(historyButton).not.toContain("#fff");
+  });
+
   it("shows a plain History button when there is nothing yet", () => {
     const markup = renderBar();
     expect(markup).not.toContain('role="status"');
