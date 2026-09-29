@@ -403,10 +403,12 @@ async function downloadAndRegister(
 
 /** The `ExportSegmentFn` every recording-session close point (pause,
  * stop, an event rule's automated stop, and boot-time crash recovery)
- * shares: export the segment as a `.recording` into the sump's own
- * default project, via the same `downloadAndRegister` path a manual
- * download uses. No `projectPath` is passed -- a live session has no
- * notion of an explicitly-open project to target. */
+ * shares: export the segment as a `.recording` via the same
+ * `downloadAndRegister` path a manual download uses. With `routing`, it
+ * goes to the current project (cor-CORE.PROJECT-000007), or to the
+ * default project, with a notice, if the current project's binding
+ * refuses it (`segmentTarget`). Without `routing`, it always goes to the
+ * default project. */
 function makeRecordingExportSegmentFn(
   catalogPath: string,
   fetchFn: typeof fetch,
