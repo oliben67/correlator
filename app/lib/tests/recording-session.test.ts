@@ -253,3 +253,88 @@ describe("RecordingSessionManager", () => {
     catalog.close();
   });
 });
+
+// cor-CORE.ARCHIVE-000003 §2 (BUG-000008): the three-way resume choice.
+describe("BUG-000008: resuming an interrupted session", () => {
+  async function crashed() {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump({
+      id: "sump-1",
+      name: "local",
+      connectionType: "local",
+      host: "localhost",
+      port: 8080,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-16T10:00:00Z",
+      lastSeenAt: null,
+    });
+    startRecordingSession(catalog, { id: "sess", sumpId: "sump-1", now: "2026-09-16T10:00:00Z" });
+    const [coerced] = await coerceInterruptedSessions(catalog, async () => ({
+      id: "rec",
+      filePath: "/r/rec.recording",
+    }));
+    const bootStop = JSON.parse(coerced.segmentsJson).at(-1).stoppedAt as string;
+    return { catalog, bootStop };
+  }
+
+  it('from "interruption" opens the segment where boot recovery stopped saving', async () => {
+    const { catalog, bootStop } = await crashed();
+    const resumed = resumeRecordingSession(catalog, {
+      sessionId: "sess",
+      from: "interruption",
+      now: "2099-01-01T00:00:00Z",
+    });
+    expect(resumed?.status).toBe("recording");
+    expect(resumed?.activeSegmentStartedAt).toBe(bootStop);
+    expect(resumed?.wasInterrupted).toBe(false);
+    expect(catalog.getInterruptedSessions()).toEqual([]);
+    catalog.close();
+  });
+
+  it('from "now" (the default) opens the segment at now', async () => {
+    const { catalog } = await crashed();
+    const resumed = resumeRecordingSession(catalog, {
+      sessionId: "sess",
+      now: "2099-01-01T00:00:00Z",
+    });
+    expect(resumed?.activeSegmentStartedAt).toBe("2099-01-01T00:00:00Z");
+    expect(resumed?.wasInterrupted).toBe(false);
+    catalog.close();
+  });
+
+  it('from "interruption" with no segment yet falls back to now', () => {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump({
+      id: "sump-1",
+      name: "local",
+      connectionType: "local",
+      host: "localhost",
+      port: 8080,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-16T10:00:00Z",
+      lastSeenAt: null,
+    });
+    const s = startRecordingSession(catalog, { sumpId: "sump-1", now: "2026-09-16T10:00:00Z" });
+    catalog.upsertRecordingSession({ ...s, status: "paused", activeSegmentStartedAt: null });
+    const resumed = resumeRecordingSession(catalog, {
+      sessionId: s.id,
+      from: "interruption",
+      now: "2026-09-16T11:00:00Z",
+    });
+    expect(resumed?.activeSegmentStartedAt).toBe("2026-09-16T11:00:00Z");
+    catalog.close();
+  });
+
+  it("stopping an interrupted session clears its notice", async () => {
+    const { catalog } = await crashed();
+    const stopped = await stopRecordingSession(catalog, { sessionId: "sess" });
+    expect(stopped?.status).toBe("stopped");
+    expect(stopped?.wasInterrupted).toBe(false);
+    expect(catalog.getInterruptedSessions()).toEqual([]);
+    catalog.close();
+  });
+});

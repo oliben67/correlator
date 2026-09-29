@@ -9,6 +9,11 @@ import {
   type Snapshot,
 } from "../../lib/snapshot.js";
 import { preferenceEffects, preferencesAtom } from "./appPreferences.js";
+import {
+  InterruptedSessionNotice,
+  interruptionPoint,
+  type ResumeFrom,
+} from "./components/InterruptedSessionNotice.js";
 import { cursorTAtom, viewAtom } from "./correlate/atoms.js";
 import { Chart } from "./correlate/Chart.js";
 import { EventDensityLane } from "./correlate/EventDensityLane.js";
@@ -193,6 +198,8 @@ export function Correlate({
     try {
       const res = await window.correlator.resumeRecordingSession({ sessionId: session.id });
       setSession(res);
+      // Resuming answers any interruption notice (BUG-000008).
+      setInterrupted((prev) => prev.filter((s) => s.id !== session.id));
       notify("Recording resumed");
     } catch (err) {
       notify(`Could not resume recording: ${errorMessage(err)}`, "error");
@@ -204,9 +211,33 @@ export function Correlate({
     try {
       const res = await window.correlator.stopRecordingSession({ sessionId: session.id });
       setSession(res);
+      setInterrupted((prev) => prev.filter((s) => s.id !== session.id));
       notify("Recording stopped");
     } catch (err) {
       notify(`Could not stop recording: ${errorMessage(err)}`, "error");
+    }
+  };
+
+  // cor-CORE.ARCHIVE-000003 §2 (BUG-000008): the three-way resume choice.
+  const handleResumeInterrupted = async (
+    interruptedSession: RecordingSessionSummary,
+    from: ResumeFrom,
+  ) => {
+    try {
+      const res = await window.correlator.resumeRecordingSession({
+        sessionId: interruptedSession.id,
+        from,
+      });
+      if (res?.sumpId === sumpId) setSession(res);
+      setInterrupted((prev) => prev.filter((s) => s.id !== interruptedSession.id));
+      const point = interruptionPoint(interruptedSession);
+      notify(
+        from === "interruption" && point
+          ? `Resumed from the interruption point (continuing since ${new Date(point).toLocaleString()})`
+          : "Resumed from now; the time since the interruption is left as a gap",
+      );
+    } catch (err) {
+      notify(`Could not resume recording: ${errorMessage(err)}`, "error");
     }
   };
 
@@ -215,7 +246,7 @@ export function Correlate({
       await window.correlator.dismissInterruptedSession({ sessionId });
       setInterrupted((prev) => prev.filter((s) => s.id !== sessionId));
     } catch (err) {
-      setState({ phase: "error", message: errorMessage(err) });
+      notify(`Could not dismiss the notice: ${errorMessage(err)}`, "error");
     }
   };
 
@@ -306,21 +337,12 @@ export function Correlate({
   return (
     <div>
       {interrupted.map((intSess) => (
-        <div
+        <InterruptedSessionNotice
           key={intSess.id}
-          role="alert"
-          style={{ background: "#fff3cd", padding: "8px", marginBottom: "8px" }}
-        >
-          <strong>Notice:</strong> A previous recording session ({intSess.id}) was interrupted by
-          process restart and has been paused.
-          <button
-            type="button"
-            onClick={() => handleDismissInterrupted(intSess.id)}
-            style={{ marginLeft: "12px" }}
-          >
-            Dismiss
-          </button>
-        </div>
+          session={intSess}
+          onResume={(from) => handleResumeInterrupted(intSess, from)}
+          onDecideLater={() => handleDismissInterrupted(intSess.id)}
+        />
       ))}
 
       <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "12px" }}>

@@ -1002,11 +1002,14 @@ export async function registerIpcHandlers(
   });
 
   electronApi.ipcMain.handle("resume-recording-session", async (...args: unknown[]) => {
-    const [, params] = args as [unknown, { sessionId: string }];
+    const [, params] = args as [unknown, { sessionId: string; from?: "now" | "interruption" }];
     mkdirSync(dirname(catalogPath), { recursive: true });
     const catalog = new Catalog(catalogPath);
     try {
-      const session = resumeRecordingSession(catalog, { sessionId: params.sessionId });
+      const session = resumeRecordingSession(catalog, {
+        sessionId: params.sessionId,
+        from: params.from,
+      });
       return session ? formatSessionSummary(session) : null;
     } finally {
       catalog.close();

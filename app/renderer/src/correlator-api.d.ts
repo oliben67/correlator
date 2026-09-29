@@ -344,6 +344,8 @@ export interface CorrelatorApi {
   pauseRecordingSession: (params: { sessionId: string }) => Promise<RecordingSessionSummary | null>;
   resumeRecordingSession: (params: {
     sessionId: string;
+    /** cor-CORE.ARCHIVE-000003 §2: default "now". */
+    from?: "now" | "interruption";
   }) => Promise<RecordingSessionSummary | null>;
   stopRecordingSession: (params: { sessionId: string }) => Promise<RecordingSessionSummary | null>;
   getRecordingSession: (params: { sumpId: string }) => Promise<RecordingSessionSummary | null>;

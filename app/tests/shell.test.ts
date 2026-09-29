@@ -2190,3 +2190,64 @@ describe("cor-CORE.SHELL-000009: hard-reset IPC", () => {
     }
   });
 });
+
+describe("BUG-000008: resume-recording-session with a starting point", () => {
+  it("passes `from` through and clears the interrupted notice", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    vi.stubEnv("HOME", dir);
+    try {
+      const catalogPath = join(dir, "catalog.db");
+      const { Catalog } = await import("../lib/catalog.ts");
+      const seeded = new Catalog(catalogPath);
+      seeded.upsertSump({
+        id: "sump-1",
+        name: "local",
+        connectionType: "local",
+        host: "127.0.0.1",
+        port: 8765,
+        status: "active",
+        authToken: null,
+        catalogJson: "{}",
+        createdAt: "2026-09-29T00:00:00Z",
+        lastSeenAt: null,
+      });
+      seeded.upsertRecordingSession({
+        id: "sess",
+        sumpId: "sump-1",
+        status: "paused",
+        startedAt: "2026-09-29T10:00:00Z",
+        stoppedAt: null,
+        activeSegmentStartedAt: null,
+        segmentsJson: JSON.stringify([
+          {
+            segmentNumber: 1,
+            startedAt: "2026-09-29T10:00:00Z",
+            stoppedAt: "2026-09-29T10:30:00Z",
+          },
+        ]),
+        wasInterrupted: true,
+        createdAt: "2026-09-29T10:00:00Z",
+      });
+      seeded.close();
+      await registerIpcHandlers(electronApi, catalogPath, fetch, testUserId);
+      const handler = (channel: string) =>
+        (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+          (call) => call[0] === channel,
+        )?.[1] as (...args: unknown[]) => Promise<unknown>;
+
+      const resumed = (await handler("resume-recording-session")(null, {
+        sessionId: "sess",
+        from: "interruption",
+      })) as { status: string; activeSegmentStartedAt: string; wasInterrupted: boolean };
+      expect(resumed).toMatchObject({
+        status: "recording",
+        activeSegmentStartedAt: "2026-09-29T10:30:00Z",
+        wasInterrupted: false,
+      });
+      expect(await handler("get-interrupted-sessions")()).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

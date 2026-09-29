@@ -26,6 +26,12 @@ export interface PauseRecordingSessionParams {
 export interface ResumeRecordingSessionParams {
   sessionId: string;
   now?: string;
+  /** cor-CORE.ARCHIVE-000003 §2 (BUG-000008): where the new segment starts.
+   * `"now"` (default) opens it at the current time. `"interruption"` opens it
+   * where the last segment stopped -- after a crash, the boot time that boot
+   * recovery already exported up to -- so there is no gap. The next
+   * pause/stop export covers the time spent deciding. */
+  from?: "now" | "interruption";
 }
 
 export interface StopRecordingSessionParams {
@@ -130,8 +136,12 @@ export function resumeRecordingSession(
   }
 
   const now = params.now ?? new Date().toISOString();
+  const segments: RecordingSegment[] = JSON.parse(session.segmentsJson);
+  const lastStop = segments.at(-1)?.stoppedAt;
   session.status = "recording";
-  session.activeSegmentStartedAt = now;
+  session.activeSegmentStartedAt = params.from === "interruption" && lastStop ? lastStop : now;
+  // Resuming answers the interruption notice (BUG-000008).
+  session.wasInterrupted = false;
 
   catalog.upsertRecordingSession(session);
   return session;
@@ -162,6 +172,8 @@ export async function stopRecordingSession(
   session.status = "stopped";
   session.stoppedAt = now;
   session.activeSegmentStartedAt = null;
+  // A stopped session no longer has anything to resume (BUG-000008).
+  session.wasInterrupted = false;
   session.segmentsJson = JSON.stringify(segments);
 
   catalog.upsertRecordingSession(session);
