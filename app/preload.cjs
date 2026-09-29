@@ -80,6 +80,7 @@ contextBridge.exposeInMainWorld("correlator", {
   closeProject: () => ipcRenderer.invoke("close-project"),
   bindProjectContext: (context) => ipcRenderer.invoke("bind-project-context", context),
   forgetRecentProject: (path) => ipcRenderer.invoke("forget-recent-project", path),
+  setTrackViewState: (params) => ipcRenderer.invoke("set-track-view-state", params),
   clearRecentProjects: () => ipcRenderer.invoke("clear-recent-projects"),
   // cor-CORE.SHELL-000009: Hard Reset of app-local UI state.
   hardReset: () => ipcRenderer.invoke("hard-reset"),

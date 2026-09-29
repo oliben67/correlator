@@ -271,6 +271,13 @@ export interface ProjectSummary {
   context: ProjectContextSummary | null;
   references: string[];
   folders: ProjectFolderSummary[];
+  /** cor-CORE.PROJECT-000008: per-reference view-state, keyed by path. */
+  trackSettings: Record<string, TrackViewStateSummary>;
+}
+
+export interface TrackViewStateSummary {
+  delayMs?: number;
+  visible?: boolean;
 }
 
 export interface RecentProjectSummary {
@@ -383,6 +390,7 @@ export interface CorrelatorApi {
   closeProject: () => Promise<ProjectSummary>;
   bindProjectContext: (context: ProjectContextSummary) => Promise<ProjectSummary>;
   forgetRecentProject: (path: string) => Promise<RecentProjectSummary[]>;
+  setTrackViewState: (params: { path: string } & TrackViewStateSummary) => Promise<ProjectSummary>;
   clearRecentProjects: () => Promise<RecentProjectSummary[]>;
   /** cor-CORE.SHELL-000009: resets app-local UI state; returns the default
    * preferences. The caller reloads the window. */

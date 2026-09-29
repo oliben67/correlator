@@ -2251,3 +2251,35 @@ describe("BUG-000008: resume-recording-session with a starting point", () => {
     }
   });
 });
+
+describe("cor-CORE.PROJECT-000008: set-track-view-state IPC", () => {
+  it("stores a reference's view-state on the current project", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    vi.stubEnv("HOME", dir);
+    try {
+      const { saveProject, createProject, addReference, loadProject } = await import(
+        "../lib/project.ts"
+      );
+      const work = join(dir, "work.correlator");
+      saveProject(work, addReference(createProject(), "/r/a.track"));
+      const { projectSession } = await registerIpcHandlers(
+        electronApi,
+        join(dir, "catalog.db"),
+        fetch,
+        testUserId,
+      );
+      await projectSession.open(work);
+      const handle = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+        (call) => call[0] === "set-track-view-state",
+      )?.[1] as (...args: unknown[]) => Promise<{ trackSettings: unknown }>;
+      const summary = await handle(null, { path: "/r/a.track", delayMs: 500, visible: true });
+      expect(summary.trackSettings).toEqual({ "/r/a.track": { delayMs: 500, visible: true } });
+      expect(loadProject(work).trackSettings).toEqual({
+        "/r/a.track": { delayMs: 500, visible: true },
+      });
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -38,7 +38,9 @@ export function LogPanel({ rows, rowHeight = 22, containerHeight = 300 }: LogPan
     const row = rows[i];
     visibleRows.push(
       <button
-        key={row.ts}
+        // Index-qualified: rows merged from several sources can share a
+        // timestamp (cor-CORE.PROJECT-000008).
+        key={`${i}:${row.ts}`}
         type="button"
         style={{
           position: "absolute",

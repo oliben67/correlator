@@ -662,6 +662,15 @@ export async function registerIpcHandlers(
     projectSession.bind(context);
     return projectSession.summary();
   });
+  // cor-CORE.PROJECT-000008: per-reference delay/visibility.
+  electronApi.ipcMain.handle("set-track-view-state", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { path: string; delayMs?: number; visible?: boolean }];
+    projectSession.setTrackViewState(params.path, {
+      delayMs: params.delayMs,
+      visible: params.visible,
+    });
+    return projectSession.summary();
+  });
   electronApi.ipcMain.handle("forget-recent-project", async (...args: unknown[]) => {
     projectSession.forgetRecent(args[1] as string);
     return projectSession.recent();

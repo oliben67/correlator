@@ -205,4 +205,17 @@ describe("cor-CORE.PROJECT-000007: ProjectSession", () => {
     expect(notices).toHaveLength(before);
   });
 
+  it("sets a reference's delay and visibility (cor-CORE.PROJECT-000008)", async () => {
+    saveProject(defaultPath, addReference(createProject(), "/r/a.track"));
+    const { s, notices, changes } = session();
+    expect(s.summary().trackSettings).toEqual({});
+    expect(s.setTrackViewState("/r/a.track", { delayMs: -250 })).toBe(true);
+    expect(s.setTrackViewState("/r/a.track", { visible: false })).toBe(true);
+    expect(s.summary().trackSettings).toEqual({ "/r/a.track": { delayMs: -250, visible: false } });
+    expect(loadProject(defaultPath).context ?? null).toBeNull(); // never binds
+    expect(changes()).toBe(2);
+    expect(s.setTrackViewState("/r/missing.track", { visible: true })).toBe(false);
+    expect(s.setTrackViewState("/r/a.track", { delayMs: 1.5 })).toBe(false);
+    expect(notices.filter((n) => n.severity === "error")).toHaveLength(2);
+  });
 });

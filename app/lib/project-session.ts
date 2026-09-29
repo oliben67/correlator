@@ -25,6 +25,9 @@ import {
   type ProjectContext,
   saveProject,
   saveProjectAs,
+  setTrackDelay,
+  setTrackVisibility,
+  type TrackViewState,
   type VirtualFolder,
 } from "./project.ts";
 import {
@@ -59,6 +62,8 @@ export interface ProjectSummary {
   context: ProjectContext | null;
   references: string[];
   folders: VirtualFolder[];
+  /** cor-CORE.PROJECT-000005/-000008: per-reference delay/visibility. */
+  trackSettings: Record<string, TrackViewState>;
 }
 
 export interface ProjectSessionOptions {
@@ -134,6 +139,7 @@ export class ProjectSession {
       context,
       references: [...project.references],
       folders: project.folders,
+      trackSettings: { ...project.trackSettings },
     };
   }
 
@@ -239,6 +245,27 @@ export class ProjectSession {
     this.current = this.defaultPath;
     this.writeRecent([]);
     this.emitChange();
+  }
+
+  /** cor-CORE.PROJECT-000008: sets a reference's view-state in the current
+   * project (any project, the default included: view-state never binds). */
+  setTrackViewState(path: string, state: TrackViewState): boolean {
+    const project = this.loadCurrent();
+    if (!project.references.includes(path)) {
+      this.notice(`Not a reference of this project: ${path}`, "error");
+      return false;
+    }
+    if (state.delayMs !== undefined && !Number.isInteger(state.delayMs)) {
+      this.notice("A delay must be a whole number of milliseconds", "error");
+      return false;
+    }
+    return this.attempt("Could not save the view settings", () => {
+      let next = project;
+      if (state.delayMs !== undefined) next = setTrackDelay(next, path, state.delayMs);
+      if (state.visible !== undefined) next = setTrackVisibility(next, path, state.visible);
+      saveProject(this.current, next);
+      this.emitChange();
+    });
   }
 
   forgetRecent(path: string): void {

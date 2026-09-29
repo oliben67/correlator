@@ -1,8 +1,11 @@
-import type { CSSProperties } from "react";
+import { useSetAtom } from "jotai/react";
+import { type CSSProperties, useCallback, useEffect, useRef } from "react";
 import { Button } from "./components/Button.js";
 import { Panel } from "./components/Panel.js";
+import { viewAtom } from "./correlate/atoms.js";
 import type { ProjectSummary, RecentProjectSummary, SumpSummary } from "./correlator-api.js";
 import { ProjectIcon } from "./icons.js";
+import { ProjectViewer } from "./ProjectViewer.js";
 import {
   canBindProject,
   groupReferences,
@@ -10,6 +13,7 @@ import {
   referenceLabel,
   useProject,
 } from "./project.js";
+import { unionRange, useProjectArchives, viewStateOf } from "./projectTracks.js";
 
 // cor-CORE.PROJECT-000007 (REQ-000031, RM-000039): the project browser.
 // Every action here runs on the main process's ProjectSession -- the same
@@ -158,8 +162,47 @@ export interface ProjectViewProps {
 export function ProjectView({ sumps, activeSumpId }: ProjectViewProps) {
   const { project, recent } = useProject();
   if (!project) return <p>Loading project…</p>;
+  return (
+    <LoadedProjectView
+      project={project}
+      recent={recent}
+      sumps={sumps}
+      activeSumpId={activeSumpId}
+    />
+  );
+}
 
+function LoadedProjectView({
+  project,
+  recent,
+  sumps,
+  activeSumpId,
+}: ProjectViewProps & { project: ProjectSummary; recent: RecentProjectSummary[] }) {
   const api = window.correlator;
+  // cor-CORE.PROJECT-000008: the project's own tracks/recordings.
+  const archives = useProjectArchives(project.references);
+  const setView = useSetAtom(viewAtom);
+
+  const fitView = useCallback(() => {
+    const items = project.references.flatMap((path) => {
+      const entry = archives[path];
+      const { visible, delayMs } = viewStateOf(project, path);
+      if (!visible || !entry || entry.kind === "error") return [];
+      return [{ archive: entry.kind === "track" ? entry.track : entry.recording, delayMs }];
+    });
+    const range = unionRange(items);
+    if (range) setView(range);
+    return range !== null;
+  }, [archives, project, setView]);
+
+  // Fit once each time the current project changes, as soon as something
+  // visible has loaded.
+  const fittedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (fittedFor.current === project.path) return;
+    if (fitView()) fittedFor.current = project.path;
+  }, [fitView, project.path]);
+
   const run = (action: ProjectAction) => {
     switch (action) {
       case "new":
@@ -183,20 +226,35 @@ export function ProjectView({ sumps, activeSumpId }: ProjectViewProps) {
   };
 
   return (
-    <ProjectPanel
-      project={project}
-      recent={recent}
-      sumps={sumps}
-      activeSumpId={activeSumpId}
-      onAction={(action) => {
-        void run(action);
-      }}
-      onOpenRecent={(path) => {
-        void api.openProject(path);
-      }}
-      onForgetRecent={(path) => {
-        void api.forgetRecentProject(path);
-      }}
-    />
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 960 }}>
+      <ProjectPanel
+        project={project}
+        recent={recent}
+        sumps={sumps}
+        activeSumpId={activeSumpId}
+        onAction={(action) => {
+          void run(action);
+        }}
+        onOpenRecent={(path) => {
+          void api.openProject(path);
+        }}
+        onForgetRecent={(path) => {
+          void api.forgetRecentProject(path);
+        }}
+      />
+      <ProjectViewer
+        project={project}
+        archives={archives}
+        onToggle={(path, visible) => {
+          void api.setTrackViewState({ path, visible });
+        }}
+        onDelay={(path, delayMs) => {
+          void api.setTrackViewState({ path, delayMs });
+        }}
+        onFit={() => {
+          fitView();
+        }}
+      />
+    </div>
   );
 }

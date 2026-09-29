@@ -18,6 +18,7 @@ function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
     context: null,
     references: [],
     folders: [],
+    trackSettings: {},
     ...overrides,
   };
 }
