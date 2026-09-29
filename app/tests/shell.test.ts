@@ -9,6 +9,7 @@ import {
   classifyOpenedFile,
   createWindow,
   defaultCatalogPath,
+  electronProjectDialog,
   registerAppLifecycle,
   registerIpcHandlers,
 } from "../shell.ts";
@@ -1963,5 +1964,189 @@ describe("RM-000029: pop-out/detach IPC handlers", () => {
     expect(detached.webContents.send).not.toHaveBeenCalled();
 
     rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe("cor-CORE.PROJECT-000007: current-project routing and project IPC", () => {
+  function handler(channel: string): (...args: unknown[]) => Promise<unknown> {
+    return (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === channel,
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+  }
+
+  /** One window, so broadcasts are observable on its webContents.send. */
+  function sent(channel: string): unknown[] {
+    const [win] = allWindows;
+    if (!win) return [];
+    return (win.webContents.send as ReturnType<typeof vi.fn>).mock.calls
+      .filter((call) => call[0] === channel)
+      .map((call) => call[1]);
+  }
+
+  async function setup() {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    // The default project and recent list resolve under os.homedir() --
+    // never touch the real ~/.correlator (BUG-000004-z6qEx1Kf).
+    vi.stubEnv("HOME", dir);
+    const catalogPath = join(dir, "catalog.db");
+    const { Catalog } = await import("../lib/catalog.ts");
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "sump-1",
+      name: "local",
+      connectionType: "logical",
+      host: "127.0.0.1",
+      port: 8765,
+      status: "active",
+      authToken: null,
+      catalogJson: "{}",
+      createdAt: "2026-09-29T00:00:00Z",
+      lastSeenAt: null,
+      dockerHost: "sump-1",
+    });
+    seeded.upsertDataStream({
+      id: "sump-1",
+      sumpId: "sump-1",
+      kind: "sump",
+      sourceRef: "sump-1",
+      ownerUserId: null,
+      isPrivate: false,
+      catalogJson: "{}",
+      createdAt: "2026-09-29T00:00:00Z",
+    });
+    seeded.close();
+    new electronApi.BrowserWindow({}); // one window to receive broadcasts
+    const fakeFetch = vi.fn(
+      async () => new Response(new Uint8Array([1, 2, 3]), { status: 200 }),
+    ) as unknown as typeof fetch;
+    const { projectSession } = await registerIpcHandlers(
+      electronApi,
+      catalogPath,
+      fakeFetch,
+      testUserId,
+    );
+    const { loadProject } = await import("../lib/project.ts");
+    return {
+      dir,
+      projectSession,
+      loadProject,
+      defaultPath: join(dir, ".correlator", "default.correlator"),
+      cleanup: () => {
+        vi.unstubAllEnvs();
+        rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  it("a download with no explicit project goes to the current project", async () => {
+    const { dir, projectSession, loadProject, cleanup } = await setup();
+    try {
+      const work = join(dir, "work.correlator");
+      await projectSession.newProject(work);
+      const result = (await handler("download-recording")(null, {
+        sumpId: "sump-1",
+        dataStreamId: "sump-1",
+        start: "2026-09-29T00:00:00Z",
+        end: "2026-09-29T00:01:00Z",
+      })) as { filePath: string };
+      expect(loadProject(work).references).toEqual([result.filePath]);
+      expect(result.filePath.startsWith(join(dir, "recordings"))).toBe(true);
+      expect(sent("project-changed").length).toBeGreaterThan(0);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("a session segment goes to the current project when its binding accepts it", async () => {
+    const { dir, projectSession, loadProject, cleanup } = await setup();
+    try {
+      const work = join(dir, "work.correlator");
+      await projectSession.newProject(work);
+      const started = (await handler("start-recording-session")(null, { sumpId: "sump-1" })) as {
+        id: string;
+      };
+      await handler("pause-recording-session")(null, { sessionId: started.id });
+      expect(loadProject(work).references).toHaveLength(1);
+      expect(loadProject(work).context).toEqual({ sumpId: "sump-1", dataStreamId: "sump-1" });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("a session segment the current project refuses goes to the default project, with a notice", async () => {
+    const { dir, projectSession, loadProject, defaultPath, cleanup } = await setup();
+    try {
+      const work = join(dir, "work.correlator");
+      await projectSession.newProject(work);
+      projectSession.bind({ sumpId: "other", dataStreamId: "other" });
+      const started = (await handler("start-recording-session")(null, { sumpId: "sump-1" })) as {
+        id: string;
+      };
+      const paused = (await handler("pause-recording-session")(null, {
+        sessionId: started.id,
+      })) as { segments: unknown[] };
+      expect(paused.segments).toHaveLength(1);
+      expect(loadProject(work).references).toEqual([]);
+      expect(loadProject(defaultPath).references).toHaveLength(1);
+      expect(sent("main-notification")).toContainEqual(
+        expect.objectContaining({ severity: "error" }),
+      );
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("exposes the session through the project IPC channels", async () => {
+    const { dir, cleanup } = await setup();
+    try {
+      const work = join(dir, "work.correlator");
+      expect(await handler("get-current-project")()).toMatchObject({ mode: "default" });
+      expect(await handler("new-project")(null, work)).toMatchObject({
+        path: work,
+        name: "work",
+        mode: "unbound",
+      });
+      expect(
+        await handler("bind-project-context")(null, { sumpId: "sump-1", dataStreamId: "sump-1" }),
+      ).toMatchObject({ mode: "bound" });
+      expect(await handler("list-recent-projects")()).toEqual([
+        expect.objectContaining({ path: work }),
+      ]);
+      expect(await handler("close-project")()).toMatchObject({ mode: "default" });
+      expect(await handler("open-project")(null, work)).toMatchObject({ path: work });
+      expect(await handler("forget-recent-project")(null, work)).toEqual([]);
+      expect(sent("main-notification")).toContainEqual({
+        message: 'Created project "work"',
+        severity: "info",
+      });
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe("cor-CORE.PROJECT-000007: electronProjectDialog", () => {
+  it("is absent without Electron's dialog module", () => {
+    expect(electronProjectDialog(electronApi)).toBeUndefined();
+  });
+
+  it("maps cancel to null and returns the chosen path", async () => {
+    const results = {
+      open: { canceled: false, filePaths: ["/p/a.correlator"] },
+      save: { canceled: true },
+    };
+    const api: ElectronApi = {
+      ...electronApi,
+      dialog: {
+        showOpenDialog: vi.fn(async () => results.open),
+        showSaveDialog: vi.fn(async () => results.save),
+      },
+    };
+    const dialog = electronProjectDialog(api);
+    expect(await dialog?.pickOpenPath()).toBe("/p/a.correlator");
+    expect(await dialog?.pickSavePath("/p/Untitled.correlator")).toBeNull();
+    expect(api.dialog?.showSaveDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ defaultPath: "/p/Untitled.correlator" }),
+    );
   });
 });

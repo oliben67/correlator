@@ -20,15 +20,22 @@ const path = require("node:path");
 const pendingOpenFilePaths = [];
 let classifyOpenedFileRef = null;
 let mainWindowRef = null;
+// cor-CORE.PROJECT-000007: set once registerIpcHandlers has created it.
+let projectSessionRef = null;
 
 function handleOpenedPath(filePath) {
   const kind = classifyOpenedFileRef(filePath);
   if (!kind) return;
-  // No renderer-side "open this file" listener exists yet (Phase 6 is
-  // the data model + file I/O, not a project-browser UI -- see
-  // REQ-000008's Open questions) -- focusing the existing window is the
-  // whole observable effect for now; forwarding `{kind, filePath}` via
-  // IPC is the natural next step once that UI exists.
+  // A `.correlator` becomes the current project (cor-CORE.PROJECT-000007,
+  // completing cor-CORE.PROJECT-000004's deferred step). `.recording`/
+  // `.track` still only focus the window -- no viewer for them yet.
+  if (kind === "project") {
+    if (!projectSessionRef) {
+      pendingOpenFilePaths.push(filePath);
+      return;
+    }
+    projectSessionRef.open(filePath);
+  }
   if (mainWindowRef) {
     mainWindowRef.show();
   }
@@ -60,9 +67,6 @@ async function bootstrap() {
     await import("./shell.ts");
   const { buildMenuTemplate } = await import("./lib/menu.ts");
   classifyOpenedFileRef = classifyOpenedFile;
-  for (const filePath of pendingOpenFilePaths.splice(0)) {
-    handleOpenedPath(filePath);
-  }
 
   registerAppLifecycle(electron);
 
@@ -79,13 +83,58 @@ async function bootstrap() {
     // indexHtmlPath are threaded the same way, for open-detached-panel.
     const preloadPath = path.join(__dirname, "preload.cjs");
     const indexHtmlPath = path.join(__dirname, "renderer", "index.html");
-    await registerIpcHandlers(electron, undefined, undefined, undefined, {
-      isPackaged: electron.app.isPackaged,
-      resourcesPath: process.resourcesPath,
-      preloadPath,
-      indexHtmlPath,
-    });
+    const { projectSession } = await registerIpcHandlers(
+      electron,
+      undefined,
+      undefined,
+      undefined,
+      {
+        isPackaged: electron.app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        preloadPath,
+        indexHtmlPath,
+      },
+    );
+
+    // cor-CORE.PROJECT-000007: the File menu's project actions run on the
+    // same ProjectSession as the Project view, and the menu is rebuilt
+    // whenever the current project or the recent list changes.
+    const runProjectAction = (action, filePath) => {
+      switch (action) {
+        case "new":
+          return projectSession.newProject();
+        case "open":
+          return projectSession.open();
+        case "open-recent":
+          return projectSession.open(filePath);
+        case "clear-recent":
+          return projectSession.clearRecent();
+        case "save":
+          return projectSession.save();
+        case "save-as":
+          return projectSession.saveAs();
+        case "close":
+          return projectSession.close();
+      }
+    };
+    const rebuildMenu = () =>
+      electron.Menu.setApplicationMenu(
+        electron.Menu.buildFromTemplate(
+          buildMenuTemplate({
+            recentProjects: projectSession.recent(),
+            isDefaultProject: projectSession.isDefault,
+            onProjectAction: runProjectAction,
+          }),
+        ),
+      );
+    projectSession.onChange(rebuildMenu);
+    rebuildMenu();
+
     mainWindowRef = await createWindow(electron, { preloadPath, indexHtmlPath });
+    projectSessionRef = projectSession;
+    for (const filePath of pendingOpenFilePaths.splice(0)) {
+      handleOpenedPath(filePath);
+    }
   });
 }
 

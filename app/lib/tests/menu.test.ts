@@ -49,3 +49,66 @@ describe("buildMenuTemplate", () => {
     }
   });
 });
+
+// cor-CORE.PROJECT-000007 (REQ-000031): File-menu project actions.
+describe("buildMenuTemplate with project options", () => {
+  function fileMenu(overrides: Partial<Parameters<typeof buildMenuTemplate>[0] & object> = {}) {
+    const calls: [string, string | undefined][] = [];
+    const [file] = buildMenuTemplate({
+      recentProjects: [],
+      isDefaultProject: true,
+      onProjectAction: (action, path) => calls.push([action, path]),
+      ...overrides,
+    });
+    return { items: file?.submenu ?? [], calls };
+  }
+
+  it("lists the project actions before Quit, with the standard accelerators", () => {
+    const { items } = fileMenu();
+    expect(items.map((i) => i.label ?? i.role ?? i.type)).toEqual([
+      "New Project…",
+      "Open Project…",
+      "Open Recent",
+      "separator",
+      "Save",
+      "Save As…",
+      "Close Project",
+      "separator",
+      "quit",
+    ]);
+    const accel = Object.fromEntries(items.map((i) => [i.label, i.accelerator]));
+    expect(accel).toMatchObject({
+      "New Project…": "CmdOrCtrl+N",
+      "Open Project…": "CmdOrCtrl+O",
+      Save: "CmdOrCtrl+S",
+      "Save As…": "CmdOrCtrl+Shift+S",
+    });
+  });
+
+  it("disables Close Project on the default project", () => {
+    expect(fileMenu().items.find((i) => i.label === "Close Project")?.enabled).toBe(false);
+    expect(
+      fileMenu({ isDefaultProject: false }).items.find((i) => i.label === "Close Project")?.enabled,
+    ).toBe(true);
+  });
+
+  it("shows a disabled placeholder when there are no recent projects", () => {
+    const recent = fileMenu().items.find((i) => i.label === "Open Recent")?.submenu;
+    expect(recent).toEqual([{ label: "No recent projects", enabled: false }]);
+  });
+
+  it("routes clicks to the handler, recent entries with their path", () => {
+    const { items, calls } = fileMenu({
+      recentProjects: [{ name: "work", path: "/p/work.correlator" }],
+    });
+    items.find((i) => i.label === "Save")?.click?.();
+    const recent = items.find((i) => i.label === "Open Recent")?.submenu ?? [];
+    recent.find((i) => i.label === "work")?.click?.();
+    recent.find((i) => i.label === "Clear Recent")?.click?.();
+    expect(calls).toEqual([
+      ["save", undefined],
+      ["open-recent", "/p/work.correlator"],
+      ["clear-recent", undefined],
+    ]);
+  });
+});

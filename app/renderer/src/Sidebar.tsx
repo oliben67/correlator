@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { SumpIcon } from "./icons.js";
+import { ProjectIcon, SumpIcon } from "./icons.js";
 
-export type NavView = "correlate" | "sumps" | "events" | "preferences" | "about";
+export type NavView = "correlate" | "project" | "sumps" | "events" | "preferences" | "about";
 
 export interface SidebarProps {
   activeView: NavView;
@@ -21,6 +21,8 @@ export function Sidebar({ activeView, onViewChange, onDetach }: SidebarProps) {
   // thought to be (see `icons.tsx`'s own header comment).
   const navItems: { id: NavView; label: string; icon: ReactNode }[] = [
     { id: "correlate", label: "Correlation", icon: "📊" },
+    // cor-CORE.PROJECT-000007 (RM-000039).
+    { id: "project", label: "Project", icon: <ProjectIcon size={16} /> },
     { id: "sumps", label: "Sump Manager", icon: <SumpIcon size={16} /> },
     { id: "events", label: "Event Triggers", icon: "⚡" },
     { id: "preferences", label: "Preferences", icon: "⚙️" },

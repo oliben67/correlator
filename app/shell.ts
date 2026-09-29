@@ -45,6 +45,7 @@ import {
   loadProject,
   saveProject,
 } from "./lib/project.ts";
+import { type ProjectDialog, ProjectSession } from "./lib/project-session.ts";
 import {
   connectExistingSump,
   detectLocalDocker,
@@ -111,6 +112,45 @@ export interface ElectronApi {
    * lets the OS decide). Optional so every existing fake `electronApi`
    * in tests keeps compiling unchanged; real Electron always has this. */
   nativeTheme?: { themeSource: "system" | "light" | "dark" };
+  /** cor-CORE.PROJECT-000007: native open/save dialogs for the project
+   * actions. Optional for the same reason as nativeTheme. */
+  dialog?: {
+    showOpenDialog: (options: Record<string, unknown>) => Promise<{
+      canceled: boolean;
+      filePaths: string[];
+    }>;
+    showSaveDialog: (options: Record<string, unknown>) => Promise<{
+      canceled: boolean;
+      filePath?: string;
+    }>;
+  };
+}
+
+const PROJECT_FILTERS = [{ name: "Correlator project", extensions: ["correlator"] }];
+
+/** Adapts Electron's dialog module to lib/project-session.ts's injected
+ * ProjectDialog (lib/ stays free of electron imports). */
+export function electronProjectDialog(api: ElectronApi): ProjectDialog | undefined {
+  const dialog = api.dialog;
+  if (!dialog) return undefined;
+  return {
+    async pickOpenPath() {
+      const result = await dialog.showOpenDialog({
+        title: "Open Project",
+        properties: ["openFile"],
+        filters: PROJECT_FILTERS,
+      });
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
+    async pickSavePath(suggestedPath) {
+      const result = await dialog.showSaveDialog({
+        title: "Save Project",
+        defaultPath: suggestedPath,
+        filters: PROJECT_FILTERS,
+      });
+      return result.canceled || !result.filePath ? null : result.filePath;
+    },
+  };
 }
 
 export function defaultCatalogPath(): string {
@@ -371,17 +411,51 @@ function makeRecordingExportSegmentFn(
   catalogPath: string,
   fetchFn: typeof fetch,
   userId: string,
+  routing?: SegmentRouting,
 ): ExportSegmentFn {
   return async (sumpId, startIso, endIso) => {
-    return downloadAndRegister(catalogPath, fetchFn, userId, {
+    const projectPath = routing ? segmentTarget(routing, sumpId) : undefined;
+    const result = await downloadAndRegister(catalogPath, fetchFn, userId, {
       sumpId,
       dataStreamId: sumpId,
       exportPath: "/recordings/export",
       exportParams: { start: startIso, end: endIso },
       fileExt: ".recording",
       kind: "recording",
+      projectPath,
     });
+    routing?.onExported();
+    return result;
   };
+}
+
+/** cor-CORE.PROJECT-000007: how recording-session segments reach the
+ * current project. */
+interface SegmentRouting {
+  session: ProjectSession;
+  notify: (notice: { message: string; severity: "info" | "error" }) => void;
+  onExported: () => void;
+}
+
+/** The current project, unless its binding (cor-CORE.PROJECT-000006)
+ * would refuse this segment -- then the default project (undefined),
+ * which accepts every context, so a recorded segment is never lost. */
+function segmentTarget(routing: SegmentRouting, sumpId: string): string | undefined {
+  const target = routing.session.downloadTarget();
+  if (!target) return undefined;
+  const context = { sumpId, dataStreamId: sumpId };
+  let accepted = false;
+  try {
+    accepted = canAddReferenceToProject(loadProject(target), context);
+  } catch {
+    accepted = false;
+  }
+  if (accepted) return target;
+  routing.notify({
+    message: `Recording segment saved to the default project: "${routing.session.summary().name}" is bound to another data stream`,
+    severity: "error",
+  });
+  return undefined;
 }
 
 function formatSessionSummary(session: RecordingSessionRow) {
@@ -408,6 +482,15 @@ export interface ProvisionIpcOptions {
    * own `CreateWindowOptions`, so they're threaded through here too. */
   preloadPath?: string;
   indexHtmlPath?: string;
+  /** cor-CORE.PROJECT-000007: injected by tests; otherwise one is created
+   * with the Electron dialog adapter. */
+  projectSession?: ProjectSession;
+}
+
+export interface RegisteredIpc {
+  /** main.cjs builds the File menu from it and routes OS-opened
+   * `.correlator` files to it. */
+  projectSession: ProjectSession;
 }
 
 export async function registerIpcHandlers(
@@ -416,7 +499,7 @@ export async function registerIpcHandlers(
   fetchFn: typeof fetch = fetch,
   userId: string = getOrCreateUserId(),
   provisionOptions: ProvisionIpcOptions = {},
-): Promise<void> {
+): Promise<RegisteredIpc> {
   const {
     isPackaged = false,
     resourcesPath,
@@ -424,6 +507,26 @@ export async function registerIpcHandlers(
     preloadPath,
     indexHtmlPath,
   } = provisionOptions;
+
+  // cor-CORE.PROJECT-000007: the one current project, and the two push
+  // channels that keep every window in step with it.
+  const projectSession =
+    provisionOptions.projectSession ??
+    new ProjectSession({ dialog: electronProjectDialog(electronApi) });
+  const broadcast = (channel: string, payload?: unknown) => {
+    for (const win of electronApi.BrowserWindow.getAllWindows?.() ?? []) {
+      win.webContents.send(channel, payload);
+    }
+  };
+  const notifyWindows = (notice: { message: string; severity: "info" | "error" }) =>
+    broadcast("main-notification", notice);
+  projectSession.onNotice(notifyWindows);
+  projectSession.onChange(() => broadcast("project-changed"));
+  const segmentRouting: SegmentRouting = {
+    session: projectSession,
+    notify: notifyWindows,
+    onExported: () => broadcast("project-changed"),
+  };
   // RM-000029: scoped to this call, not module-level -- real Electron
   // only ever calls registerIpcHandlers once per app lifetime, so this
   // changes nothing in production, but it means each test's fresh
@@ -437,7 +540,7 @@ export async function registerIpcHandlers(
     try {
       await coerceInterruptedSessions(
         bootCatalog,
-        makeRecordingExportSegmentFn(catalogPath, fetchFn, userId),
+        makeRecordingExportSegmentFn(catalogPath, fetchFn, userId, segmentRouting),
       );
       // cor-CORE.UI-000001: apply the stored theme preference before the
       // window paints, so the very first frame already matches it
@@ -494,7 +597,10 @@ export async function registerIpcHandlers(
       exportParams: { start: params.start, end: params.end },
       fileExt: ".recording",
       kind: "recording",
-      projectPath: params.projectPath,
+      projectPath: params.projectPath ?? projectSession.downloadTarget(),
+    }).then((result) => {
+      broadcast("project-changed");
+      return result;
     });
   });
 
@@ -512,8 +618,50 @@ export async function registerIpcHandlers(
       },
       fileExt: ".track",
       kind: "track",
-      projectPath: params.projectPath,
+      projectPath: params.projectPath ?? projectSession.downloadTarget(),
+    }).then((result) => {
+      broadcast("project-changed");
+      return result;
     });
+  });
+
+  // cor-CORE.PROJECT-000007: the project browser's actions. Outcomes are
+  // reported through projectSession's notices (main-notification), so
+  // each handler just returns the resulting current project.
+  electronApi.ipcMain.handle("get-current-project", async () => projectSession.summary());
+  electronApi.ipcMain.handle("list-recent-projects", async () => projectSession.recent());
+  electronApi.ipcMain.handle("new-project", async (...args: unknown[]) => {
+    await projectSession.newProject(args[1] as string | undefined);
+    return projectSession.summary();
+  });
+  electronApi.ipcMain.handle("open-project", async (...args: unknown[]) => {
+    await projectSession.open(args[1] as string | undefined);
+    return projectSession.summary();
+  });
+  electronApi.ipcMain.handle("save-project", async () => {
+    await projectSession.save();
+    return projectSession.summary();
+  });
+  electronApi.ipcMain.handle("save-project-as", async () => {
+    await projectSession.saveAs();
+    return projectSession.summary();
+  });
+  electronApi.ipcMain.handle("close-project", async () => {
+    projectSession.close();
+    return projectSession.summary();
+  });
+  electronApi.ipcMain.handle("bind-project-context", async (...args: unknown[]) => {
+    const [, context] = args as [unknown, { sumpId: string; dataStreamId: string }];
+    projectSession.bind(context);
+    return projectSession.summary();
+  });
+  electronApi.ipcMain.handle("forget-recent-project", async (...args: unknown[]) => {
+    projectSession.forgetRecent(args[1] as string);
+    return projectSession.recent();
+  });
+  electronApi.ipcMain.handle("clear-recent-projects", async () => {
+    projectSession.clearRecent();
+    return projectSession.recent();
   });
 
   electronApi.ipcMain.handle("read-recording-archive", async (...args: unknown[]) => {
@@ -820,7 +968,7 @@ export async function registerIpcHandlers(
     try {
       const session = await pauseRecordingSession(catalog, {
         sessionId: params.sessionId,
-        exportSegmentFn: makeRecordingExportSegmentFn(catalogPath, fetchFn, userId),
+        exportSegmentFn: makeRecordingExportSegmentFn(catalogPath, fetchFn, userId, segmentRouting),
       });
       return session ? formatSessionSummary(session) : null;
     } finally {
@@ -847,7 +995,7 @@ export async function registerIpcHandlers(
     try {
       const session = await stopRecordingSession(catalog, {
         sessionId: params.sessionId,
-        exportSegmentFn: makeRecordingExportSegmentFn(catalogPath, fetchFn, userId),
+        exportSegmentFn: makeRecordingExportSegmentFn(catalogPath, fetchFn, userId, segmentRouting),
       });
       return session ? formatSessionSummary(session) : null;
     } finally {
@@ -980,7 +1128,12 @@ export async function registerIpcHandlers(
             if (active) {
               await stopRecordingSession(catalog, {
                 sessionId: active.id,
-                exportSegmentFn: makeRecordingExportSegmentFn(catalogPath, fetchFn, userId),
+                exportSegmentFn: makeRecordingExportSegmentFn(
+                  catalogPath,
+                  fetchFn,
+                  userId,
+                  segmentRouting,
+                ),
               });
             }
           }
@@ -1086,6 +1239,8 @@ export async function registerIpcHandlers(
       }
     }
   });
+
+  return { projectSession };
 }
 
 export type OpenedFileKind = "track" | "recording" | "project" | null;

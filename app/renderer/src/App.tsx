@@ -10,6 +10,7 @@ import { useSyncedView } from "./correlate/useSyncedView.js";
 import type { SumpSummary } from "./correlator-api.js";
 import { notify } from "./notifications.js";
 import { Preferences } from "./Preferences.js";
+import { ProjectView } from "./ProjectView.js";
 import { type RecordingStatusReport, statusBarRecordingStatus } from "./recordingStatus.js";
 import { type NavView, Sidebar } from "./Sidebar.js";
 import { StatusBar } from "./StatusBar.js";
@@ -58,6 +59,15 @@ export function App() {
         return next;
       });
     });
+  }, []);
+
+  // cor-CORE.PROJECT-000007: outcomes of main-process actions (File menu,
+  // project actions, a session segment rerouted to the default project)
+  // arrive as pushes and join the same notification feed.
+  useEffect(() => {
+    return window.correlator.onMainNotification(({ message, severity }) =>
+      notify(message, severity),
+    );
   }, []);
 
   useEffect(() => {
@@ -131,6 +141,13 @@ export function App() {
                     activeSump && <p>{activeSump.name} isn't reporting from any docker host yet.</p>
                   )}
                 </div>
+              )}
+
+              {activeNav === "project" && (
+                <ProjectView
+                  sumps={selectable ?? []}
+                  activeSumpId={isCorrelatable(activeSump) ? activeSump.id : null}
+                />
               )}
 
               {activeNav === "sumps" && (

@@ -68,4 +68,27 @@ contextBridge.exposeInMainWorld("correlator", {
     ipcRenderer.on("sync-broadcast", listener);
     return () => ipcRenderer.removeListener("sync-broadcast", listener);
   },
+  // cor-CORE.PROJECT-000007: the project browser. Outcomes arrive as
+  // main-notification pushes; project-changed says "re-read the current
+  // project" (after an action, a download, or a menu action).
+  getCurrentProject: () => ipcRenderer.invoke("get-current-project"),
+  listRecentProjects: () => ipcRenderer.invoke("list-recent-projects"),
+  newProject: (path) => ipcRenderer.invoke("new-project", path),
+  openProject: (path) => ipcRenderer.invoke("open-project", path),
+  saveProject: () => ipcRenderer.invoke("save-project"),
+  saveProjectAs: () => ipcRenderer.invoke("save-project-as"),
+  closeProject: () => ipcRenderer.invoke("close-project"),
+  bindProjectContext: (context) => ipcRenderer.invoke("bind-project-context", context),
+  forgetRecentProject: (path) => ipcRenderer.invoke("forget-recent-project", path),
+  clearRecentProjects: () => ipcRenderer.invoke("clear-recent-projects"),
+  onProjectChanged: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("project-changed", listener);
+    return () => ipcRenderer.removeListener("project-changed", listener);
+  },
+  onMainNotification: (callback) => {
+    const listener = (_event, notice) => callback(notice);
+    ipcRenderer.on("main-notification", listener);
+    return () => ipcRenderer.removeListener("main-notification", listener);
+  },
 });

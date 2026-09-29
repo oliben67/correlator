@@ -251,6 +251,40 @@ export interface RuleEvaluationSummary {
   matchingSamples: unknown[];
 }
 
+/** Mirrors app/lib/project-session.ts's ProjectSummary (cor-CORE.PROJECT-000007). */
+export interface ProjectContextSummary {
+  sumpId: string;
+  dataStreamId: string;
+}
+
+export interface ProjectFolderSummary {
+  name: string;
+  items: string[];
+  folders: ProjectFolderSummary[];
+}
+
+export interface ProjectSummary {
+  path: string;
+  name: string;
+  isDefault: boolean;
+  mode: "default" | "unbound" | "bound";
+  context: ProjectContextSummary | null;
+  references: string[];
+  folders: ProjectFolderSummary[];
+}
+
+export interface RecentProjectSummary {
+  path: string;
+  name: string;
+  lastOpenedAt: string;
+}
+
+/** A main-process outcome to show as a status-bar notification. */
+export interface MainNotification {
+  message: string;
+  severity: "info" | "error";
+}
+
 /** Mirrors app/lib/preferences.ts's AppPreferences (cor-CORE.SHELL-000008). */
 export interface AppPreferencesSummary {
   defaultQueryLimit: number;
@@ -284,7 +318,7 @@ export interface DetachedPanelClosedPayload {
 export type SyncMessage =
   | { type: "view"; t0: number; t1: number }
   | { type: "cursor"; cursorT: number | null }
-  | { type: "nav"; view: "correlate" | "sumps" | "events" | "preferences" | "about" };
+  | { type: "nav"; view: "correlate" | "project" | "sumps" | "events" | "preferences" | "about" };
 
 export interface CorrelatorApi {
   listSumps: () => Promise<SumpSummary[]>;
@@ -336,6 +370,20 @@ export interface CorrelatorApi {
   onDetachedPanelClosed: (callback: (payload: DetachedPanelClosedPayload) => void) => () => void;
   broadcastSync: (message: SyncMessage) => void;
   onSync: (callback: (message: SyncMessage) => void) => () => void;
+  // cor-CORE.PROJECT-000007: project browser.
+  getCurrentProject: () => Promise<ProjectSummary>;
+  listRecentProjects: () => Promise<RecentProjectSummary[]>;
+  /** Without a path, main shows a native dialog. */
+  newProject: (path?: string) => Promise<ProjectSummary>;
+  openProject: (path?: string) => Promise<ProjectSummary>;
+  saveProject: () => Promise<ProjectSummary>;
+  saveProjectAs: () => Promise<ProjectSummary>;
+  closeProject: () => Promise<ProjectSummary>;
+  bindProjectContext: (context: ProjectContextSummary) => Promise<ProjectSummary>;
+  forgetRecentProject: (path: string) => Promise<RecentProjectSummary[]>;
+  clearRecentProjects: () => Promise<RecentProjectSummary[]>;
+  onProjectChanged: (callback: () => void) => () => void;
+  onMainNotification: (callback: (notice: MainNotification) => void) => () => void;
 }
 
 declare global {

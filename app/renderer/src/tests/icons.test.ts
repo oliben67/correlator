@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { DataStreamIcon, SumpIcon } from "../icons.js";
+import { DataStreamIcon, ProjectIcon, SumpIcon } from "../icons.js";
 
 describe("cor-CORE.UI-000002: icon components", () => {
   it("SumpIcon renders a well-formed SVG with a real viewBox and no hardcoded fill", () => {
@@ -23,6 +23,13 @@ describe("cor-CORE.UI-000002: icon components", () => {
 
     expect(markup).toContain("<svg");
     expect(markup).toContain('viewBox="0 0 492.711 492.711"');
+    expect(markup.match(/fill="/g)?.length).toBe(1);
+    expect(markup).toContain('fill="currentColor"');
+  });
+
+  it("ProjectIcon (RM-000039) renders a well-formed SVG with a real viewBox and no hardcoded fill", () => {
+    const markup = renderToStaticMarkup(createElement(ProjectIcon, { size: 20 }));
+    expect(markup).toContain('viewBox="0 0 64 64"');
     expect(markup.match(/fill="/g)?.length).toBe(1);
     expect(markup).toContain('fill="currentColor"');
   });
