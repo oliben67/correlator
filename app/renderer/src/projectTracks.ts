@@ -82,29 +82,38 @@ export type LoadedArchive =
   | { kind: "recording"; recording: ArchivedRecording }
   | { kind: "error"; message: string };
 
-/** Reads every `.track`/`.recording` reference once per path (cached for the
- * component's life); a failing file becomes an error entry, never blocking
- * the others. */
-export function useProjectArchives(references: readonly string[]): Record<string, LoadedArchive> {
-  const [loaded, setLoaded] = useState<Record<string, LoadedArchive>>({});
-  // Paths already asked for, so a re-render with the same references
-  // (every project-changed push) never re-reads a file.
-  const requested = useRef(new Set<string>());
+export interface ArchiveReaders {
+  readTrack: (path: string) => Promise<ArchivedTrack>;
+  readRecording: (path: string) => Promise<ArchivedRecording>;
+}
 
-  useEffect(() => {
-    let cancelled = false;
-    for (const path of references) {
+/**
+ * Reads each `.track`/`.recording` path at most once and reports every
+ * result, including one that arrives after later `load` calls (BUG-000009:
+ * a re-render mid-read used to drop it). Only `dispose()` (unmount) stops
+ * results from being reported. A failing file becomes an error entry and
+ * never blocks the others (cor-CORE.PROJECT-000008 §5).
+ */
+export class ArchiveLoader {
+  private readonly requested = new Set<string>();
+  private disposed = false;
+
+  constructor(
+    private readonly readers: ArchiveReaders,
+    private readonly onResult: (path: string, entry: LoadedArchive) => void,
+  ) {}
+
+  load(paths: readonly string[]): void {
+    for (const path of paths) {
       const kind = referenceKind(path);
-      if (kind === "other" || requested.current.has(path)) continue;
-      requested.current.add(path);
-      const read =
+      if (kind === "other" || this.requested.has(path)) continue;
+      this.requested.add(path);
+      const read: Promise<LoadedArchive> =
         kind === "track"
-          ? window.correlator
-              .readTrackArchive(path)
-              .then((track): LoadedArchive => ({ kind: "track", track }))
-          : window.correlator
-              .readRecordingArchive(path)
-              .then((recording): LoadedArchive => ({ kind: "recording", recording }));
+          ? this.readers.readTrack(path).then((track) => ({ kind: "track", track }))
+          : this.readers
+              .readRecording(path)
+              .then((recording) => ({ kind: "recording", recording }));
       read
         .catch(
           (err: unknown): LoadedArchive => ({
@@ -113,16 +122,36 @@ export function useProjectArchives(references: readonly string[]): Record<string
           }),
         )
         .then((entry) => {
-          if (cancelled) {
-            requested.current.delete(path); // let the next run retry it
-            return;
-          }
-          setLoaded((prev) => ({ ...prev, [path]: entry }));
+          if (!this.disposed) this.onResult(path, entry);
         });
     }
-    return () => {
-      cancelled = true;
-    };
+  }
+
+  dispose(): void {
+    this.disposed = true;
+  }
+}
+
+/** The current project's archives, keyed by path (cached for the component's life). */
+export function useProjectArchives(references: readonly string[]): Record<string, LoadedArchive> {
+  const [loaded, setLoaded] = useState<Record<string, LoadedArchive>>({});
+  const loader = useRef<ArchiveLoader | null>(null);
+
+  // One loader per mount; disposed only on unmount.
+  useEffect(() => {
+    const instance = new ArchiveLoader(
+      {
+        readTrack: (path) => window.correlator.readTrackArchive(path),
+        readRecording: (path) => window.correlator.readRecordingArchive(path),
+      },
+      (path, entry) => setLoaded((prev) => ({ ...prev, [path]: entry })),
+    );
+    loader.current = instance;
+    return () => instance.dispose();
+  }, []);
+
+  useEffect(() => {
+    loader.current?.load(references);
   }, [references]);
 
   return loaded;

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ArchivedRecording, ArchivedTrack, ProjectSummary } from "../correlator-api.js";
 import { ProjectViewer } from "../ProjectViewer.js";
 import {
+  ArchiveLoader,
   type LoadedArchive,
   mergeRecordingRows,
   referenceKind,
@@ -167,5 +168,70 @@ describe("cor-CORE.PROJECT-000008: ProjectViewer", () => {
 
   it("renders nothing for a project with no tracks or recordings", () => {
     expect(render(project({ references: ["/r/c.json"] }))).toBe("");
+  });
+});
+
+describe("BUG-000009: ArchiveLoader", () => {
+  function deferred<T>() {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  }
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it("delivers a result that arrives after a later load call, reading each file once", async () => {
+    const pending = deferred<ArchivedTrack>();
+    let reads = 0;
+    const results: [string, LoadedArchive][] = [];
+    const loader = new ArchiveLoader(
+      {
+        readTrack: () => {
+          reads++;
+          return pending.promise;
+        },
+        readRecording: async () => recording({}),
+      },
+      (path, entry) => results.push([path, entry]),
+    );
+    loader.load(["/r/a.track"]);
+    loader.load(["/r/a.track"]); // a re-render while the read is in flight
+    pending.resolve(track);
+    await flush();
+    expect(reads).toBe(1);
+    expect(results).toEqual([["/r/a.track", { kind: "track", track }]]);
+  });
+
+  it("reports a failing file as an error without blocking the others", async () => {
+    const results: Record<string, LoadedArchive["kind"]> = {};
+    const loader = new ArchiveLoader(
+      {
+        readTrack: async () => {
+          throw new Error("ENOENT");
+        },
+        readRecording: async () => recording({}),
+      },
+      (path, entry) => {
+        results[path] = entry.kind;
+      },
+    );
+    loader.load(["/r/a.track", "/r/b.recording", "/r/c.json"]);
+    await flush();
+    expect(results).toEqual({ "/r/a.track": "error", "/r/b.recording": "recording" });
+  });
+
+  it("stops reporting after dispose (unmount)", async () => {
+    const pending = deferred<ArchivedTrack>();
+    const results: string[] = [];
+    const loader = new ArchiveLoader(
+      { readTrack: () => pending.promise, readRecording: async () => recording({}) },
+      (path) => results.push(path),
+    );
+    loader.load(["/r/a.track"]);
+    loader.dispose();
+    pending.resolve(track);
+    await flush();
+    expect(results).toEqual([]);
   });
 });
