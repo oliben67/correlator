@@ -2150,3 +2150,43 @@ describe("cor-CORE.PROJECT-000007: electronProjectDialog", () => {
     );
   });
 });
+
+describe("cor-CORE.SHELL-000009: hard-reset IPC", () => {
+  it("defaults preferences and projects state, and keeps data and the primary Sump", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    vi.stubEnv("HOME", dir);
+    try {
+      const catalogPath = join(dir, "catalog.db");
+      const { Catalog } = await import("../lib/catalog.ts");
+      const { savePreferences, getPreferences, DEFAULT_PREFERENCES } = await import(
+        "../lib/preferences.ts"
+      );
+      const seeded = new Catalog(catalogPath);
+      savePreferences(seeded, { theme: "dark", notificationClearSeconds: 9 });
+      seeded.setPrimarySumpId("sump-1");
+      seeded.close();
+      const nativeTheme = { themeSource: "dark" as const };
+      const api: ElectronApi = { ...electronApi, nativeTheme: nativeTheme as never };
+      const { projectSession } = await registerIpcHandlers(api, catalogPath, fetch, testUserId);
+      const work = join(dir, "work.correlator");
+      await projectSession.newProject(work);
+
+      const handle = (api.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+        (call) => call[0] === "hard-reset",
+      )?.[1] as () => Promise<unknown>;
+      expect(await handle()).toEqual(DEFAULT_PREFERENCES);
+
+      const after = new Catalog(catalogPath);
+      expect(getPreferences(after)).toEqual(DEFAULT_PREFERENCES);
+      expect(after.getPrimarySumpId()).toBe("sump-1");
+      after.close();
+      expect(nativeTheme.themeSource).toBe("system");
+      expect(projectSession.isDefault).toBe(true);
+      expect(projectSession.recent()).toEqual([]);
+      expect(existsSync(work)).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

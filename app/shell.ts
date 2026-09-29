@@ -35,7 +35,12 @@ import {
 import { evaluateEventRules, type TelemetrySample } from "./lib/events.ts";
 import { transition } from "./lib/lifecycle.ts";
 import { installLocalSump, LOCAL_SUMP_ID, resolveServerResourcesDir } from "./lib/local-sump.ts";
-import { type AppPreferences, getPreferences, savePreferences } from "./lib/preferences.ts";
+import {
+  type AppPreferences,
+  getPreferences,
+  resetPreferences,
+  savePreferences,
+} from "./lib/preferences.ts";
 import {
   addReference,
   bindLiveContext,
@@ -661,6 +666,24 @@ export async function registerIpcHandlers(
     projectSession.forgetRecent(args[1] as string);
     return projectSession.recent();
   });
+  // cor-CORE.SHELL-000009: Hard Reset of app-local UI state. Preferences
+  // back to defaults (theme applied at once), recent list cleared, default
+  // project current. Data, Sump registrations (incl. the primary Sump),
+  // sessions, event rules and identity are never touched. The renderer
+  // reloads itself afterwards.
+  electronApi.ipcMain.handle("hard-reset", async () => {
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      const prefs = resetPreferences(catalog);
+      if (electronApi.nativeTheme) electronApi.nativeTheme.themeSource = prefs.theme;
+      projectSession.reset();
+      return prefs;
+    } finally {
+      catalog.close();
+    }
+  });
+
   electronApi.ipcMain.handle("clear-recent-projects", async () => {
     projectSession.clearRecent();
     return projectSession.recent();

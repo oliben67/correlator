@@ -89,6 +89,13 @@ export function getPreferences(catalog: Catalog): AppPreferences {
   return prefs;
 }
 
+/** cor-CORE.SHELL-000009 (Hard Reset): deletes every stored preference so
+ * all of them read as their defaults again; other settings are kept. */
+export function resetPreferences(catalog: Catalog): AppPreferences {
+  catalog.deleteSettingsWithPrefix(PREF_KEY_PREFIX);
+  return getPreferences(catalog);
+}
+
 /** Saves the given fields. Throws, storing nothing, if any given value is
  * invalid or any key is unknown. */
 export function savePreferences(

@@ -104,3 +104,19 @@ describe("cor-CORE.SHELL-000008: effective preferences", () => {
     catalog.close();
   });
 });
+
+// cor-CORE.SHELL-000009 (REQ-000032): Hard Reset of preferences.
+describe("cor-CORE.SHELL-000009: resetPreferences", () => {
+  it("deletes every stored preference and keeps other settings", async () => {
+    const { resetPreferences } = await import("../preferences.ts");
+    const catalog = new Catalog(dbPath);
+    savePreferences(catalog, { theme: "dark", defaultQueryLimit: 7, showStatusBar: false });
+    catalog.setPrimarySumpId("sump-1");
+    catalog.setSetting("pref%other", "x"); // LIKE metacharacters in a non-pref key
+    expect(resetPreferences(catalog)).toEqual(DEFAULT_PREFERENCES);
+    expect(getPreferences(catalog)).toEqual(DEFAULT_PREFERENCES);
+    expect(catalog.getPrimarySumpId()).toBe("sump-1");
+    expect(catalog.getSetting("pref%other")).toBe("x");
+    catalog.close();
+  });
+});

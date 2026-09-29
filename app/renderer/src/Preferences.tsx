@@ -127,12 +127,47 @@ export function PreferencesForm({
   );
 }
 
+/** cor-CORE.SHELL-000009: Hard Reset of app-local UI state. */
+export const HARD_RESET_CONFIRM =
+  "Hard Reset puts every preference back to its default, clears the recent-projects " +
+  "list, returns to the default project and reloads the window.\n\n" +
+  "Recordings, tracks, project files, Sump registrations, recording sessions and " +
+  "event rules are not touched.\n\nContinue?";
+
+export function DangerZone({ onHardReset, busy }: { onHardReset: () => void; busy: boolean }) {
+  return (
+    <Panel style={{ borderColor: "var(--critical)", maxWidth: 520 }}>
+      <h3 style={{ marginTop: 0, color: "var(--critical)" }}>Danger zone</h3>
+      <p style={{ fontSize: "0.9em" }}>
+        Hard Reset clears correlator's own settings (preferences, recent projects, the current
+        project) and reloads. Your recordings, tracks, projects and Sumps are kept.
+      </p>
+      <Button variant="danger" onClick={onHardReset} disabled={busy}>
+        Hard Reset
+      </Button>
+    </Panel>
+  );
+}
+
 export function Preferences() {
   const saved = useAtomValue(preferencesAtom);
   const setSaved = useSetAtom(preferencesAtom);
   const [form, setForm] = useState<PreferenceForm>(() => toPreferenceForm(saved));
   const [errors, setErrors] = useState<FormErrors>({});
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
+
+  const handleHardReset = async () => {
+    if (!window.confirm(HARD_RESET_CONFIRM)) return;
+    setResetting(true);
+    try {
+      await window.correlator.hardReset();
+      window.location.reload();
+    } catch (err) {
+      setResetting(false);
+      notify(`Hard Reset failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  };
 
   // Follow the saved preferences once App's loader has fetched them.
   useEffect(() => {
@@ -176,6 +211,9 @@ export function Preferences() {
           setForm(toPreferenceForm(DEFAULT_PREFERENCES));
         }}
       />
+      <div style={{ marginTop: 24 }}>
+        <DangerZone onHardReset={handleHardReset} busy={resetting || saving} />
+      </div>
     </div>
   );
 }

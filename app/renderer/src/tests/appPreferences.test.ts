@@ -7,7 +7,7 @@ import {
   toPreferenceForm,
   validatePreferenceForm,
 } from "../appPreferences.js";
-import { PreferencesForm } from "../Preferences.js";
+import { DangerZone, HARD_RESET_CONFIRM, PreferencesForm } from "../Preferences.js";
 
 // cor-CORE.SHELL-000008 (REQ-000030): preference effects + form validation.
 
@@ -139,5 +139,34 @@ describe("cor-CORE.SHELL-000008: PreferencesForm", () => {
 
   it("disables Save and Reset while saving", () => {
     expect(render({ saving: true }).match(/<button[^>]*disabled/g)).toHaveLength(2);
+  });
+});
+
+describe("cor-CORE.SHELL-000009: DangerZone", () => {
+  it("offers a danger-styled Hard Reset that says what it keeps", () => {
+    const markup = renderToStaticMarkup(
+      createElement(DangerZone, { onHardReset: () => {}, busy: false }),
+    );
+    expect(markup).toContain("Danger zone");
+    expect(markup).toMatch(/<button[^>]*var\(--critical\)[^>]*>Hard Reset<\/button>/);
+    expect(markup).toContain("recordings, tracks, projects and Sumps are kept");
+  });
+
+  it("disables the button while busy", () => {
+    const markup = renderToStaticMarkup(
+      createElement(DangerZone, { onHardReset: () => {}, busy: true }),
+    );
+    expect(markup).toMatch(/<button[^>]*disabled[^>]*>Hard Reset<\/button>/);
+  });
+
+  it("confirms with the rule's scope: what it resets and what it never touches", () => {
+    for (const phrase of [
+      "preference",
+      "recent-projects",
+      "default project",
+      "Recordings, tracks, project files, Sump registrations",
+    ]) {
+      expect(HARD_RESET_CONFIRM).toContain(phrase);
+    }
   });
 });

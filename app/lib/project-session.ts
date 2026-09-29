@@ -232,6 +232,15 @@ export class ProjectSession {
     });
   }
 
+  /** cor-CORE.SHELL-000009 (Hard Reset): the default project becomes
+   * current and the recent list is emptied. No per-step notices; the
+   * caller reports the reset as a whole. Never touches any project file. */
+  reset(): void {
+    this.current = this.defaultPath;
+    this.writeRecent([]);
+    this.emitChange();
+  }
+
   forgetRecent(path: string): void {
     this.writeRecent(removeRecentProject(this.recent(), path));
     this.emitChange();

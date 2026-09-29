@@ -419,6 +419,16 @@ export class Catalog {
       .run(key, value);
   }
 
+  /** cor-CORE.SHELL-000009 (Hard Reset): deletes every setting whose key
+   * starts with `prefix`; returns how many were deleted. */
+  deleteSettingsWithPrefix(prefix: string): number {
+    const escaped = prefix.replace(/[\\%_]/g, (c) => `\\${c}`);
+    return Number(
+      this.db.prepare("DELETE FROM app_settings WHERE key LIKE ? ESCAPE '\\'").run(`${escaped}%`)
+        .changes,
+    );
+  }
+
   /** cor-CORE.PROVISION-007: which Sump the switcher UI currently treats
    * as primary -- a UI-selection concept, distinct from `SumpState`'s
    * `"active"` (reachability). `null` until a user explicitly picks one. */

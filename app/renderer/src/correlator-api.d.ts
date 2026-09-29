@@ -382,6 +382,9 @@ export interface CorrelatorApi {
   bindProjectContext: (context: ProjectContextSummary) => Promise<ProjectSummary>;
   forgetRecentProject: (path: string) => Promise<RecentProjectSummary[]>;
   clearRecentProjects: () => Promise<RecentProjectSummary[]>;
+  /** cor-CORE.SHELL-000009: resets app-local UI state; returns the default
+   * preferences. The caller reloads the window. */
+  hardReset: () => Promise<AppPreferencesSummary>;
   onProjectChanged: (callback: () => void) => () => void;
   onMainNotification: (callback: (notice: MainNotification) => void) => () => void;
 }

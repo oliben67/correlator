@@ -193,4 +193,16 @@ describe("cor-CORE.PROJECT-000007: ProjectSession", () => {
     s.clearRecent();
     expect(s.recent()).toEqual([]);
   });
+
+  it("reset (Hard Reset) returns to the default project, empties recents, keeps files", async () => {
+    const { s, notices } = session({ save: [join(dir, "a.correlator")] });
+    await s.newProject();
+    const before = notices.length;
+    s.reset();
+    expect(s.isDefault).toBe(true);
+    expect(s.recent()).toEqual([]);
+    expect(existsSync(join(dir, "a.correlator"))).toBe(true);
+    expect(notices).toHaveLength(before);
+  });
+
 });
