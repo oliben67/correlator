@@ -15,17 +15,15 @@ import {
   type ResumeFrom,
 } from "./components/InterruptedSessionNotice.js";
 import { cursorTAtom, viewAtom } from "./correlate/atoms.js";
-import { Chart } from "./correlate/Chart.js";
 import { EventDensityLane } from "./correlate/EventDensityLane.js";
 import { LogPanel } from "./correlate/LogPanel.js";
 import {
   defaultWindow,
   epochMsToIso,
-  metricContainerIds,
-  toChartPoints,
   toEventTimestamps,
   toLogRows,
 } from "./correlate/recordMapping.js";
+import { SeriesCharts, useSeriesPalette } from "./correlate/SeriesCharts.js";
 import type {
   EventRuleSummary,
   RecordingSessionSummary,
@@ -331,7 +329,11 @@ export function Correlate({
     }
   };
 
-  const chartContainerId = metricContainerIds(records)[0];
+  // cor-CORE.CORRELATE-000007: hidden containers' log rows are hidden too.
+  const palette = useSeriesPalette(records);
+  const logRows = toLogRows(records).filter(
+    (row) => !row.seriesKey || !palette.hidden.has(row.seriesKey),
+  );
   const sessionStatus = session?.status ?? "idle";
 
   return (
@@ -409,7 +411,7 @@ export function Correlate({
             ⧉
           </button>
         )}
-        {!chartDetached && <Chart points={toChartPoints(records, "cpu_pct", chartContainerId)} />}
+        {!chartDetached && <SeriesCharts records={records} />}
       </div>
 
       <div>
@@ -423,7 +425,7 @@ export function Correlate({
             ⧉
           </button>
         )}
-        {!logDetached && <LogPanel rows={toLogRows(records)} />}
+        {!logDetached && <LogPanel rows={logRows} colorOf={palette.colorOf} />}
       </div>
 
       <div

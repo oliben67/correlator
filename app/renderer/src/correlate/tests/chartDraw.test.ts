@@ -94,3 +94,89 @@ describe("cor-CORE.CORRELATE-002: drawChartStrip", () => {
     expect(noCursor.calls.filter((c) => c.startsWith("moveTo"))).toHaveLength(0);
   });
 });
+
+// cor-CORE.CORRELATE-000007 (REQ-000034): several colored series per strip.
+describe("cor-CORE.CORRELATE-000007: multi-series drawChartStrip", () => {
+  function styledCtx() {
+    const ctx = fakeCtx();
+    let stroke: unknown;
+    Object.defineProperty(ctx, "strokeStyle", {
+      get: () => stroke,
+      set: (v) => {
+        stroke = v;
+        ctx.calls.push(`strokeStyle=${v}`);
+      },
+    });
+    return ctx;
+  }
+  // 10 s apart = 25 px at this view/width: within the 40 px gap limit.
+  const pts = (v0: number, v1: number) => [
+    { t: 10_000, v: v0 },
+    { t: 15_000, v: v1 },
+  ];
+
+  it("draws each series in its own color and never joins points of different series", () => {
+    const ctx = styledCtx();
+    drawChartStrip(ctx, {
+      view,
+      plotWidth,
+      height,
+      cursorT: null,
+      minValue: 0,
+      maxValue: 100,
+      series: [
+        { color: "red", points: pts(0, 100) },
+        { color: "blue", points: pts(50, 50) },
+      ],
+    });
+    expect(ctx.calls).toEqual([
+      "clearRect(0,0,500,100)",
+      "strokeStyle=red",
+      "beginPath",
+      "moveTo(50,100)",
+      "lineTo(75,0)",
+      "stroke",
+      "strokeStyle=blue",
+      "beginPath",
+      "moveTo(50,50)",
+      "lineTo(75,50)",
+      "stroke",
+    ]);
+  });
+
+  it("shares one value range across series", () => {
+    const ctx = styledCtx();
+    drawChartStrip(ctx, {
+      view,
+      plotWidth,
+      height,
+      cursorT: null,
+      series: [
+        { color: "a", points: pts(0, 10) },
+        { color: "b", points: pts(20, 20) },
+      ],
+    });
+    // range 0..20: series a's 10 sits mid-strip, series b's 20 at the top
+    expect(ctx.calls).toContain("lineTo(75,50)");
+    expect(ctx.calls).toContain("lineTo(75,0)");
+  });
+
+  it("draws the cursor after every series, in its own color", () => {
+    const ctx = styledCtx();
+    drawChartStrip(ctx, {
+      view,
+      plotWidth,
+      height,
+      cursorT: 50_000,
+      cursorColor: "grey",
+      series: [{ color: "red", points: [{ t: 10_000, v: 1 }] }],
+    });
+    expect(ctx.calls.slice(-5)).toEqual([
+      "strokeStyle=grey",
+      "beginPath",
+      "moveTo(250,0)",
+      "lineTo(250,100)",
+      "stroke",
+    ]);
+  });
+});

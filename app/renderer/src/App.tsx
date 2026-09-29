@@ -6,6 +6,7 @@ import { preferenceEffects, usePreferences } from "./appPreferences.js";
 import { BootSplash } from "./BootSplash.js";
 import { Correlate } from "./Correlate.js";
 import { DataStreamPicker } from "./components/DataStreamPicker.js";
+import { useSyncedSeries } from "./correlate/useSyncedSeries.js";
 import { useSyncedView } from "./correlate/useSyncedView.js";
 import type { SumpSummary } from "./correlator-api.js";
 import { notify } from "./notifications.js";
@@ -34,6 +35,7 @@ export function App() {
   const [recordingReport, setRecordingReport] = useState<RecordingStatusReport | null>(null);
 
   useSyncedView();
+  useSyncedSeries();
   // cor-CORE.SHELL-000008: load and apply the saved preferences.
   const effects = preferenceEffects(usePreferences());
 

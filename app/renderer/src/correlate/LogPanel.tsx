@@ -17,15 +17,19 @@ import { isHighlighted } from "./timeMapping.js";
 export interface LogRow {
   ts: number;
   message: string;
+  /** cor-CORE.CORRELATE-000007: the container this row belongs to. */
+  seriesKey?: string;
 }
 
 export interface LogPanelProps {
   rows: LogRow[];
   rowHeight?: number;
   containerHeight?: number;
+  /** cor-CORE.CORRELATE-000007: a row's container color, for its chip. */
+  colorOf?: (seriesKey: string) => string | undefined;
 }
 
-export function LogPanel({ rows, rowHeight = 22, containerHeight = 300 }: LogPanelProps) {
+export function LogPanel({ rows, rowHeight = 22, containerHeight = 300, colorOf }: LogPanelProps) {
   const store = useStore();
   const cursorT = useAtomValue(cursorTAtom);
   const windowMs = useAtomValue(windowMsAtom);
@@ -62,6 +66,24 @@ export function LogPanel({ rows, rowHeight = 22, containerHeight = 300 }: LogPan
           recenterOn(store, row.ts);
         }}
       >
+        {(() => {
+          const color = row.seriesKey ? colorOf?.(row.seriesKey) : undefined;
+          return color ? (
+            <span
+              data-series-chip={row.seriesKey}
+              aria-hidden
+              style={{
+                display: "inline-block",
+                width: 8,
+                height: 8,
+                borderRadius: 2,
+                marginRight: 6,
+                background: color,
+                verticalAlign: "middle",
+              }}
+            />
+          ) : null;
+        })()}
         {row.message}
       </button>,
     );

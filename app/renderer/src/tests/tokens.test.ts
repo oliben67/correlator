@@ -32,4 +32,10 @@ describe("cor-CORE.UI-000001: design-token coverage", () => {
     }
     expect(undefinedUses).toEqual([]);
   });
+
+  it("every curated series palette token (cor-CORE.CORRELATE-000007) is defined", async () => {
+    const { CURATED_TOKENS } = await import("../correlate/colorSlots.js");
+    const css = readFileSync(join(SRC, "tokens.css"), "utf8");
+    for (const token of CURATED_TOKENS) expect(css).toContain(`${token}:`);
+  });
 });

@@ -325,7 +325,10 @@ export interface DetachedPanelClosedPayload {
 export type SyncMessage =
   | { type: "view"; t0: number; t1: number }
   | { type: "cursor"; cursorT: number | null }
-  | { type: "nav"; view: "correlate" | "project" | "sumps" | "events" | "preferences" | "about" };
+  | { type: "nav"; view: "correlate" | "project" | "sumps" | "events" | "preferences" | "about" }
+  // cor-CORE.CORRELATE-000007: container hide/order, and a new window asking for it.
+  | { type: "series"; hidden: string[]; order: string[] }
+  | { type: "series-request" };
 
 export interface CorrelatorApi {
   listSumps: () => Promise<SumpSummary[]>;

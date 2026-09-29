@@ -66,10 +66,12 @@ describe("cor-CORE.CORRELATE-006: toLogRows / toEventTimestamps", () => {
     expect(rows[0]).toEqual({
       ts: tsToEpochMs("2026-09-12T00:00:01.000Z"),
       message: "[error] web: boom",
+      seriesKey: "web",
     });
     expect(rows[1]).toEqual({
       ts: tsToEpochMs("2026-09-12T00:00:03.000Z"),
       message: "abc123: raw line",
+      seriesKey: "abc123",
     });
   });
 
@@ -135,5 +137,52 @@ describe("cor-CORE.CORRELATE-006: toChartPoints", () => {
 
   it("returns an empty array when nothing matches", () => {
     expect(toChartPoints(records, "cpu_pct", "no-such-container")).toEqual([]);
+  });
+});
+
+describe("cor-CORE.CORRELATE-000007: series keys", () => {
+  const metric = (over: Record<string, unknown>) =>
+    ({ kind: "metric", docker_host: "h1", ts: "2026-09-29T00:00:00Z", seq: 1, ...over }) as never;
+  const log = (over: Record<string, unknown>) =>
+    ({
+      kind: "log",
+      docker_host: "h1",
+      ts: "2026-09-29T00:00:01Z",
+      seq: 2,
+      message: "m",
+      ...over,
+    }) as never;
+
+  it("keys metrics and logs the same way; host logs fall back to the docker host", async () => {
+    const { seriesKeyOf } = await import("../recordMapping.js");
+    expect(seriesKeyOf(metric({ container_id: "c1", container_name: "web" }))).toBe("c1");
+    expect(seriesKeyOf(log({ container_id: "c1", container_name: "web" }))).toBe("c1");
+    expect(seriesKeyOf(log({ container_name: "web" }))).toBe("web");
+    expect(seriesKeyOf(log({}))).toBe("h1");
+    expect(seriesKeyOf(metric({ metric_scope: "system" }))).toBeUndefined();
+  });
+
+  it("labels a key with its container name, and log rows carry their key", async () => {
+    const { seriesLabels, toLogRows } = await import("../recordMapping.js");
+    const records = [
+      metric({ container_id: "c1" }),
+      log({ container_id: "c1", container_name: "web" }),
+    ];
+    expect(seriesLabels(records)).toEqual({ c1: "web" });
+    expect(toLogRows(records)[0].seriesKey).toBe("c1");
+  });
+
+  it("builds one series per key, never mixing containers", async () => {
+    const { metricSeries } = await import("../recordMapping.js");
+    const records = [
+      metric({ container_id: "a", cpu_pct: 1, ts: "2026-09-29T00:00:02Z" }),
+      metric({ container_id: "b", cpu_pct: 5 }),
+      metric({ container_id: "a", cpu_pct: 2 }),
+    ];
+    const series = metricSeries(records, "cpu_pct", ["b", "a"]);
+    expect(series.map((s) => [s.key, s.points.map((p) => p.v)])).toEqual([
+      ["b", [5]],
+      ["a", [2, 1]],
+    ]);
   });
 });

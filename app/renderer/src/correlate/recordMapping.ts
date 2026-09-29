@@ -32,12 +32,35 @@ function isMetricRecord(record: SumpRecord): record is MetricRecord {
   return record.kind === "metric";
 }
 
+/** cor-CORE.CORRELATE-000007: the one key a container's metrics and logs
+ * share (container id, else name). A log with neither belongs to its docker
+ * host; a metric with neither (host/system telemetry) has no series here. */
+export function seriesKeyOf(record: SumpRecord): string | undefined {
+  const key = record.container_id ?? record.container_name;
+  if (key) return key;
+  return isLogRecord(record) ? record.docker_host : undefined;
+}
+
+/** Display label per series key: the container name, else the key. */
+export function seriesLabels(records: SumpRecord[]): Record<string, string> {
+  const labels: Record<string, string> = {};
+  for (const record of records) {
+    const key = seriesKeyOf(record);
+    if (key && (!labels[key] || labels[key] === key)) labels[key] = record.container_name ?? key;
+  }
+  return labels;
+}
+
 export function toLogRows(records: SumpRecord[]): LogRow[] {
   return records.filter(isLogRecord).map((record) => {
     const who = record.container_name ?? record.container_id ?? record.docker_host;
     const level = record.level ? `[${record.level}] ` : "";
     const body = record.message ?? record.raw ?? "";
-    return { ts: tsToEpochMs(record.ts), message: `${level}${who}: ${body}` };
+    return {
+      ts: tsToEpochMs(record.ts),
+      message: `${level}${who}: ${body}`,
+      seriesKey: seriesKeyOf(record),
+    };
   });
 }
 
@@ -91,4 +114,14 @@ export function toChartPoints(
     points.push({ t: tsToEpochMs(record.ts), v });
   }
   return points.sort((a, b) => a.t - b.t);
+}
+
+/** cor-CORE.CORRELATE-000007: one series of `field` per container key, in
+ * the given key order, each sorted by time (never mixing containers). */
+export function metricSeries(
+  records: SumpRecord[],
+  field: MetricField,
+  keys: readonly string[],
+): { key: string; points: ChartPoint[] }[] {
+  return keys.map((key) => ({ key, points: toChartPoints(records, field, key) }));
 }
