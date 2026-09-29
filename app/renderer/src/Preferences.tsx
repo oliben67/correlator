@@ -1,109 +1,181 @@
-import { useEffect, useState } from "react";
-import type { AppPreferencesSummary } from "./correlator-api.d.ts";
+import { useAtomValue, useSetAtom } from "jotai/react";
+import { type CSSProperties, useEffect, useState } from "react";
+import {
+  DEFAULT_PREFERENCES,
+  type PreferenceForm,
+  preferencesAtom,
+  toPreferenceForm,
+  validatePreferenceForm,
+} from "./appPreferences.js";
+import { Button } from "./components/Button.js";
+import { Panel } from "./components/Panel.js";
+import { notify } from "./notifications.js";
+
+// cor-CORE.SHELL-000008 (REQ-000030, RM-000047): Settings + Appearance,
+// modelled on cttc's panes but limited to what correlator can control --
+// every field here takes effect.
+
+type FormErrors = Partial<Record<keyof PreferenceForm, string>>;
+
+const fieldStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 4 };
+const errorStyle: CSSProperties = { color: "var(--critical)", fontSize: "0.85em" };
+const paneStyle: CSSProperties = { display: "flex", flexDirection: "column", gap: 12 };
+
+export interface PreferencesFormProps {
+  form: PreferenceForm;
+  errors: FormErrors;
+  saving: boolean;
+  onChange: (next: PreferenceForm) => void;
+  onSave: () => void;
+  onReset: () => void;
+}
+
+export function PreferencesForm({
+  form,
+  errors,
+  saving,
+  onChange,
+  onSave,
+  onReset,
+}: PreferencesFormProps) {
+  const set = <K extends keyof PreferenceForm>(key: K, value: PreferenceForm[K]) =>
+    onChange({ ...form, [key]: value });
+
+  const numberField = (key: keyof PreferenceForm, label: string, min: number) => (
+    <label style={fieldStyle}>
+      <span>{label}</span>
+      <input
+        type="number"
+        name={key}
+        min={min}
+        step={1}
+        value={form[key] as string}
+        onChange={(e) => set(key, e.target.value as never)}
+      />
+      {errors[key] && <span style={errorStyle}>{errors[key]}</span>}
+    </label>
+  );
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSave();
+      }}
+      style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 520 }}
+    >
+      <Panel>
+        <h3 style={{ marginTop: 0 }}>Settings</h3>
+        <div style={paneStyle}>
+          {numberField("defaultQueryLimit", "Records fetched per load", 1)}
+          {numberField("autoRefreshIntervalSeconds", "Auto-refresh every (seconds, 0 = off)", 0)}
+          {numberField(
+            "logHighlightWindowSeconds",
+            "Log highlight window around the cursor (± seconds)",
+            1,
+          )}
+          {numberField("notificationClearSeconds", "Status-bar notifications stay (seconds)", 1)}
+        </div>
+      </Panel>
+
+      <Panel>
+        <h3 style={{ marginTop: 0 }}>Appearance</h3>
+        <div style={paneStyle}>
+          <label style={fieldStyle}>
+            <span>Theme</span>
+            <select
+              name="theme"
+              value={form.theme}
+              onChange={(e) => set("theme", e.target.value as PreferenceForm["theme"])}
+            >
+              <option value="system">System default</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
+          <label style={fieldStyle}>
+            <span>Log highlight color</span>
+            <input
+              type="color"
+              name="highlightColor"
+              value={form.highlightColor}
+              onChange={(e) => set("highlightColor", e.target.value)}
+            />
+            {errors.highlightColor && <span style={errorStyle}>{errors.highlightColor}</span>}
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              name="showStatusBar"
+              checked={form.showStatusBar}
+              onChange={(e) => set("showStatusBar", e.target.checked)}
+            />
+            <span>Show status bar</span>
+          </label>
+        </div>
+      </Panel>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button type="submit" variant="primary" disabled={saving}>
+          Save
+        </Button>
+        <Button onClick={onReset} disabled={saving}>
+          Reset to defaults
+        </Button>
+      </div>
+    </form>
+  );
+}
 
 export function Preferences() {
-  const [prefs, setPrefs] = useState<AppPreferencesSummary | null>(null);
-  const [queryLimit, setQueryLimit] = useState("100");
-  const [refreshInterval, setRefreshInterval] = useState("0");
-  const [theme, setTheme] = useState<"light" | "dark" | "system">("system");
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const saved = useAtomValue(preferencesAtom);
+  const setSaved = useSetAtom(preferencesAtom);
+  const [form, setForm] = useState<PreferenceForm>(() => toPreferenceForm(saved));
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [saving, setSaving] = useState(false);
 
+  // Follow the saved preferences once App's loader has fetched them.
   useEffect(() => {
-    let isMounted = true;
-    window.correlator.getPreferences().then((p) => {
-      if (isMounted) {
-        setPrefs(p);
-        setQueryLimit(String(p.defaultQueryLimit));
-        setRefreshInterval(String(p.autoRefreshIntervalSeconds));
-        setTheme(p.theme);
-      }
-    });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+    setForm(toPreferenceForm(saved));
+  }, [saved]);
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const limitNum = Number(queryLimit);
-    const intervalNum = Number(refreshInterval);
-
-    if (Number.isNaN(limitNum) || limitNum <= 0) {
-      setSaveStatus("Error: Default Query Limit must be a positive integer.");
+  const handleSave = async () => {
+    const result = validatePreferenceForm(form);
+    if (!result.ok) {
+      setErrors(result.errors);
+      notify("Preferences not saved: fix the highlighted fields", "error");
       return;
     }
-
-    if (Number.isNaN(intervalNum) || intervalNum < 0) {
-      setSaveStatus("Error: Auto Refresh Interval must be a non-negative integer.");
-      return;
-    }
-
+    setErrors({});
+    setSaving(true);
     try {
-      const updated = await window.correlator.setPreferences({
-        defaultQueryLimit: limitNum,
-        autoRefreshIntervalSeconds: intervalNum,
-        theme,
-      });
-      setPrefs(updated);
-      setSaveStatus("Preferences saved successfully!");
+      // Applies at once: every consumer reads preferencesAtom.
+      setSaved(await window.correlator.setPreferences(result.prefs));
+      notify("Preferences saved");
     } catch (err) {
-      setSaveStatus(`Failed to save: ${err instanceof Error ? err.message : String(err)}`);
+      notify(
+        `Could not save preferences: ${err instanceof Error ? err.message : String(err)}`,
+        "error",
+      );
+    } finally {
+      setSaving(false);
     }
   };
 
-  if (!prefs) {
-    return <p>Loading preferences...</p>;
-  }
-
   return (
-    <div style={{ padding: "16px", maxWidth: "500px" }}>
-      <h2>Application Preferences</h2>
-
-      {saveStatus && (
-        <p style={{ color: saveStatus.startsWith("Error") ? "#dc3545" : "#198754" }}>
-          {saveStatus}
-        </p>
-      )}
-
-      <form onSubmit={handleSave} style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <span>Default Query Limit (records per page):</span>
-          <input
-            type="number"
-            value={queryLimit}
-            onChange={(e) => setQueryLimit(e.target.value)}
-            required
-            min={1}
-          />
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <span>Auto Refresh Interval (seconds, 0 = disabled):</span>
-          <input
-            type="number"
-            value={refreshInterval}
-            onChange={(e) => setRefreshInterval(e.target.value)}
-            required
-            min={0}
-          />
-        </label>
-
-        <label style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          <span>Appearance Theme:</span>
-          <select
-            value={theme}
-            onChange={(e) => setTheme(e.target.value as "light" | "dark" | "system")}
-          >
-            <option value="system">System Default</option>
-            <option value="dark">Dark Theme</option>
-            <option value="light">Light Theme</option>
-          </select>
-        </label>
-
-        <button type="submit" style={{ width: "120px", marginTop: "8px" }}>
-          Save Settings
-        </button>
-      </form>
+    <div style={{ padding: 16 }}>
+      <h2>Preferences</h2>
+      <PreferencesForm
+        form={form}
+        errors={errors}
+        saving={saving}
+        onChange={setForm}
+        onSave={handleSave}
+        onReset={() => {
+          setErrors({});
+          setForm(toPreferenceForm(DEFAULT_PREFERENCES));
+        }}
+      />
     </div>
   );
 }

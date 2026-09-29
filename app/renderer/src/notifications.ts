@@ -19,8 +19,8 @@ export interface AppNotification {
 /** History cap -- the oldest entries are dropped beyond it. */
 export const HISTORY_LIMIT = 100;
 
-/** How long the status bar shows a notification (fixed until
- * RM-000047's Preferences expansion makes it configurable). */
+/** Default time the status bar shows a notification; the
+ * `notificationClearSeconds` preference overrides it (cor-CORE.SHELL-000008). */
 export const CLEAR_AFTER_MS = 5000;
 
 export interface NotificationStore {

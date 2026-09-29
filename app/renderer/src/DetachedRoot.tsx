@@ -1,4 +1,5 @@
 import type { DetachPanelKind, DetachViewState } from "../../lib/detach.js";
+import { usePreferences } from "./appPreferences.js";
 import { DetachedPanel } from "./DetachedPanel.js";
 import { DetachedSidebar } from "./DetachedSidebar.js";
 
@@ -12,6 +13,8 @@ export interface DetachedRootProps {
 }
 
 export function DetachedRoot({ kind, state }: DetachedRootProps) {
+  // cor-CORE.SHELL-000008: detached windows apply preferences on open too.
+  usePreferences();
   if (kind === "sidebar") {
     return <DetachedSidebar />;
   }

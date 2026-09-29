@@ -53,9 +53,7 @@ export function LogPanel({ rows, rowHeight = 22, containerHeight = 300 }: LogPan
           padding: 0,
           font: "inherit",
           cursor: "pointer",
-          background: isHighlighted(row.ts, cursorT, windowMs)
-            ? "var(--hl, #fffbcc)"
-            : "transparent",
+          background: isHighlighted(row.ts, cursorT, windowMs) ? "var(--hl-color)" : "transparent",
         }}
         onClick={() => {
           setCursor(store, row.ts);

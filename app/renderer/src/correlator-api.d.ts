@@ -251,10 +251,15 @@ export interface RuleEvaluationSummary {
   matchingSamples: unknown[];
 }
 
+/** Mirrors app/lib/preferences.ts's AppPreferences (cor-CORE.SHELL-000008). */
 export interface AppPreferencesSummary {
   defaultQueryLimit: number;
   autoRefreshIntervalSeconds: number;
   theme: "light" | "dark" | "system";
+  logHighlightWindowSeconds: number;
+  notificationClearSeconds: number;
+  highlightColor: string;
+  showStatusBar: boolean;
 }
 
 export interface AppVersionInfo {

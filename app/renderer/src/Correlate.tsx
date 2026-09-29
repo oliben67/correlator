@@ -8,6 +8,7 @@ import {
   formatSnapshotRaw,
   type Snapshot,
 } from "../../lib/snapshot.js";
+import { preferenceEffects, preferencesAtom } from "./appPreferences.js";
 import { cursorTAtom, viewAtom } from "./correlate/atoms.js";
 import { Chart } from "./correlate/Chart.js";
 import { EventDensityLane } from "./correlate/EventDensityLane.js";
@@ -65,6 +66,8 @@ export function Correlate({
   const setView = useSetAtom(viewAtom);
   const setCursorT = useSetAtom(cursorTAtom);
   const cursorT = useAtomValue(cursorTAtom);
+  // cor-CORE.SHELL-000008: fetch limit and auto-refresh come from preferences.
+  const { queryLimit, autoRefreshMs } = preferenceEffects(useAtomValue(preferencesAtom));
 
   const [records, setRecords] = useState<SumpRecord[]>([]);
   const [state, setState] = useState<LoadState>({ phase: "loading" });
@@ -99,31 +102,37 @@ export function Correlate({
     }
   }, [sumpId]);
 
-  const load = useCallback(async () => {
-    setState({ phase: "loading" });
-    try {
-      const { t0, t1 } = defaultWindow(Date.now());
-      setView({ t0, t1 });
-      const page = await window.correlator.queryRecords(sumpId, {
-        kind: "both",
-        start: epochMsToIso(t0),
-        end: epochMsToIso(t1),
-      });
-      setRecords(page.records);
-      setState({ phase: "ready" });
-
-      // Evaluate event rules on telemetry load
-      if (page.records.length > 0) {
-        const evals = await window.correlator.evaluateEventRules({
-          sumpId,
-          samples: page.records,
+  /** `quiet` (auto-refresh): no loading state, and a failure keeps the
+   * data already shown instead of replacing the view with an error. */
+  const load = useCallback(
+    async (quiet = false) => {
+      if (!quiet) setState({ phase: "loading" });
+      try {
+        const { t0, t1 } = defaultWindow(Date.now());
+        setView({ t0, t1 });
+        const page = await window.correlator.queryRecords(sumpId, {
+          kind: "both",
+          start: epochMsToIso(t0),
+          end: epochMsToIso(t1),
+          limit: queryLimit,
         });
-        setEvalResults(evals);
+        setRecords(page.records);
+        setState({ phase: "ready" });
+
+        // Evaluate event rules on telemetry load
+        if (page.records.length > 0) {
+          const evals = await window.correlator.evaluateEventRules({
+            sumpId,
+            samples: page.records,
+          });
+          setEvalResults(evals);
+        }
+      } catch (err) {
+        if (!quiet) setState({ phase: "error", message: errorMessage(err) });
       }
-    } catch (err) {
-      setState({ phase: "error", message: errorMessage(err) });
-    }
-  }, [sumpId, setView]);
+    },
+    [sumpId, setView, queryLimit],
+  );
 
   const loadSession = useCallback(async () => {
     try {
@@ -142,6 +151,12 @@ export function Correlate({
     loadSession();
     loadEventRules();
   }, [load, loadSession, loadEventRules, setCursorT]);
+
+  useEffect(() => {
+    if (autoRefreshMs === null) return;
+    const timer = setInterval(() => load(true), autoRefreshMs);
+    return () => clearInterval(timer);
+  }, [autoRefreshMs, load]);
 
   // BUG-000005: tag with the session's own Sump when there is one, so a
   // session still held from before a Sump switch is never attributed to

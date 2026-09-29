@@ -19,6 +19,9 @@ export interface StatusBarProps {
   /** cor-CORE.SHELL-000007: the notification source; the app-wide store
    * unless a test injects its own. */
   notificationStore?: NotificationStore;
+  /** cor-CORE.SHELL-000008: how long a notification stays (the
+   * `notificationClearSeconds` preference). */
+  clearAfterMs?: number;
 }
 
 export function StatusBar({
@@ -28,6 +31,7 @@ export function StatusBar({
   onSelectPrimary,
   recordingStatus = "idle",
   notificationStore = notifications,
+  clearAfterMs = CLEAR_AFTER_MS,
 }: StatusBarProps) {
   const list = useNotifications(notificationStore);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -40,13 +44,13 @@ export function StatusBar({
     if (!newest) return;
     const current = Date.now();
     setNowMs(current);
-    const remaining = newest.at + CLEAR_AFTER_MS - current;
+    const remaining = newest.at + clearAfterMs - current;
     if (remaining <= 0) return;
     const timer = setTimeout(() => setNowMs(Date.now()), remaining);
     return () => clearTimeout(timer);
-  }, [list]);
+  }, [list, clearAfterMs]);
 
-  const visible = visibleNotification(list, nowMs);
+  const visible = visibleNotification(list, nowMs, clearAfterMs);
 
   return (
     <footer

@@ -41,3 +41,66 @@ describe("Preferences", () => {
     catalog.close();
   });
 });
+
+// cor-CORE.SHELL-000008 (REQ-000030): the Settings/Appearance fields.
+describe("cor-CORE.SHELL-000008: effective preferences", () => {
+  it("defaults the new fields per the rule", () => {
+    expect(DEFAULT_PREFERENCES).toMatchObject({
+      logHighlightWindowSeconds: 5,
+      notificationClearSeconds: 5,
+      highlightColor: "#eaff00",
+      showStatusBar: true,
+    });
+  });
+
+  it("round-trips every field", () => {
+    const catalog = new Catalog(dbPath);
+    const all = {
+      defaultQueryLimit: 500,
+      autoRefreshIntervalSeconds: 30,
+      theme: "light" as const,
+      logHighlightWindowSeconds: 12,
+      notificationClearSeconds: 9,
+      highlightColor: "#12ab34",
+      showStatusBar: false,
+    };
+    expect(savePreferences(catalog, all)).toEqual(all);
+    expect(getPreferences(catalog)).toEqual(all);
+    catalog.close();
+  });
+
+  it("normalizes the highlight color to lowercase", () => {
+    const catalog = new Catalog(dbPath);
+    expect(savePreferences(catalog, { highlightColor: "#ABCDEF" }).highlightColor).toBe("#abcdef");
+    catalog.close();
+  });
+
+  it("reads a missing or invalid stored value as its default", () => {
+    const catalog = new Catalog(dbPath);
+    catalog.setSetting("pref_logHighlightWindowSeconds", "0");
+    catalog.setSetting("pref_notificationClearSeconds", "2.5");
+    catalog.setSetting("pref_highlightColor", "yellow");
+    catalog.setSetting("pref_showStatusBar", "yes");
+    catalog.setSetting("pref_defaultQueryLimit", "abc");
+    expect(getPreferences(catalog)).toEqual(DEFAULT_PREFERENCES);
+    catalog.close();
+  });
+
+  it.each([
+    [{ defaultQueryLimit: 0 }],
+    [{ autoRefreshIntervalSeconds: -1 }],
+    [{ logHighlightWindowSeconds: 1.5 }],
+    [{ notificationClearSeconds: 0 }],
+    [{ highlightColor: "#fff" }],
+    [{ theme: "sepia" }],
+    [{ showStatusBar: "false" }],
+    [{ autoStartLocalSump: true }],
+  ])("refuses to save %o and stores nothing", (update) => {
+    const catalog = new Catalog(dbPath);
+    expect(() =>
+      savePreferences(catalog, { theme: "dark", ...(update as object) } as never),
+    ).toThrow();
+    expect(getPreferences(catalog).theme).toBe("system");
+    catalog.close();
+  });
+});

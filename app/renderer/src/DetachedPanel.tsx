@@ -1,5 +1,6 @@
 import { useAtomValue } from "jotai/react";
 import { useEffect, useState } from "react";
+import { preferenceEffects, preferencesAtom } from "./appPreferences.js";
 import { viewAtom } from "./correlate/atoms.js";
 import { Chart } from "./correlate/Chart.js";
 import { LogPanel } from "./correlate/LogPanel.js";
@@ -28,6 +29,7 @@ export function DetachedPanel({ kind, sumpId }: DetachedPanelProps) {
   useSyncedView();
   const view = useAtomValue(viewAtom);
   const [records, setRecords] = useState<SumpRecord[]>([]);
+  const { queryLimit } = preferenceEffects(useAtomValue(preferencesAtom));
 
   useEffect(() => {
     let cancelled = false;
@@ -36,6 +38,7 @@ export function DetachedPanel({ kind, sumpId }: DetachedPanelProps) {
         kind: "both",
         start: epochMsToIso(view.t0),
         end: epochMsToIso(view.t1),
+        limit: queryLimit,
       })
       .then((page) => {
         if (!cancelled) setRecords(page.records);
@@ -47,7 +50,7 @@ export function DetachedPanel({ kind, sumpId }: DetachedPanelProps) {
     return () => {
       cancelled = true;
     };
-  }, [sumpId, view.t0, view.t1]);
+  }, [sumpId, view.t0, view.t1, queryLimit]);
 
   return (
     <div style={{ padding: 8, height: "100vh", boxSizing: "border-box", overflow: "auto" }}>

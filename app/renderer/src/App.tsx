@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { DetachPanelKind, DetachViewState } from "../../lib/detach.js";
 import { AboutDialog } from "./AboutDialog.js";
 import { AddSump } from "./AddSump.js";
+import { preferenceEffects, usePreferences } from "./appPreferences.js";
 import { BootSplash } from "./BootSplash.js";
 import { Correlate } from "./Correlate.js";
 import { DataStreamPicker } from "./components/DataStreamPicker.js";
@@ -32,6 +33,8 @@ export function App() {
   const [recordingReport, setRecordingReport] = useState<RecordingStatusReport | null>(null);
 
   useSyncedView();
+  // cor-CORE.SHELL-000008: load and apply the saved preferences.
+  const effects = preferenceEffects(usePreferences());
 
   const refresh = useCallback(() => {
     Promise.all([window.correlator.listSumps(), window.correlator.getPrimarySumpId()])
@@ -170,26 +173,29 @@ export function App() {
         </main>
       </div>
 
-      <StatusBar
-        sumps={selectable ?? []}
-        primarySump={activeSump}
-        recordingStatus={statusBarRecordingStatus(recordingReport, activeSump?.id ?? null)}
-        onRefresh={refresh}
-        onSelectPrimary={(sumpId) => {
-          const name = selectable?.find((s) => s.id === sumpId)?.name ?? sumpId;
-          window.correlator
-            .selectPrimarySump({ sumpId })
-            .then(() => {
-              notify(`Switched primary Sump to "${name}"`);
-              refresh();
-            })
-            .catch((err: unknown) => {
-              const message = err instanceof Error ? err.message : String(err);
-              setError(message);
-              notify(`Could not switch to "${name}": ${message}`, "error");
-            });
-        }}
-      />
+      {effects.showStatusBar && (
+        <StatusBar
+          sumps={selectable ?? []}
+          primarySump={activeSump}
+          recordingStatus={statusBarRecordingStatus(recordingReport, activeSump?.id ?? null)}
+          clearAfterMs={effects.notificationClearMs}
+          onRefresh={refresh}
+          onSelectPrimary={(sumpId) => {
+            const name = selectable?.find((s) => s.id === sumpId)?.name ?? sumpId;
+            window.correlator
+              .selectPrimarySump({ sumpId })
+              .then(() => {
+                notify(`Switched primary Sump to "${name}"`);
+                refresh();
+              })
+              .catch((err: unknown) => {
+                const message = err instanceof Error ? err.message : String(err);
+                setError(message);
+                notify(`Could not switch to "${name}": ${message}`, "error");
+              });
+          }}
+        />
+      )}
     </div>
   );
 }
