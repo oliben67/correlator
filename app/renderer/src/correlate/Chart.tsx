@@ -1,18 +1,18 @@
 /**
  * Thin React wrapper (cor-CORE.CORRELATE-002) -- owns the canvas ref and
  * HiDPI sizing, calls the pure `drawChartStrip` on relevant state
- * change, and turns a click into a `setCursor` call. All the actual
- * drawing/mapping logic lives in `chartDraw.ts`/`timeMapping.ts`, tested
- * independently of this component.
+ * change, and routes pointer gestures through `useChartGestures`
+ * (click -> `setCursor`, drag/wheel zoom, cor-CORE.CORRELATE-000009).
+ * All the actual drawing/mapping logic lives in `chartDraw.ts`/
+ * `timeMapping.ts`/`gestures.ts`, tested independently of this component.
  */
 
-import { useAtomValue, useStore } from "jotai/react";
+import { useAtomValue } from "jotai/react";
 import { useEffect, useRef } from "react";
 import { cursorTAtom, viewAtom } from "./atoms.js";
 import { type ChartPoint, type ChartSeries, drawChartStrip } from "./chartDraw.js";
 import { resolveColor } from "./colorSlots.js";
-import { setCursor } from "./correlate.js";
-import { xToT } from "./timeMapping.js";
+import { useChartGestures } from "./useChartGestures.js";
 
 export interface ChartProps {
   /** Single-series form. */
@@ -33,8 +33,8 @@ function readCssVar(name: string): string {
 
 export function Chart({ points, series, minValue, maxValue, height = 80, label }: ChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const store = useStore();
   const view = useAtomValue(viewAtom);
+  const gestures = useChartGestures(canvasRef);
   const cursorT = useAtomValue(cursorTAtom);
 
   useEffect(() => {
@@ -63,21 +63,17 @@ export function Chart({ points, series, minValue, maxValue, height = 80, label }
     });
   }, [view, points, series, cursorT, height, minValue, maxValue]);
 
-  const handleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    setCursor(store, xToT(x, view, rect.width));
-  };
-
   return (
-    <canvas
-      ref={canvasRef}
-      role="img"
-      aria-label={label}
-      style={{ width: "100%", height }}
-      onClick={handleClick}
-    />
+    <div style={{ position: "relative" }}>
+      <canvas
+        ref={canvasRef}
+        role="img"
+        aria-label={label}
+        style={{ width: "100%", height, display: "block" }}
+        onMouseDown={gestures.onMouseDown}
+        onDoubleClick={gestures.onDoubleClick}
+      />
+      {gestures.band}
+    </div>
   );
 }

@@ -17,13 +17,18 @@
 
 import { useAtom } from "jotai/react";
 import { useEffect, useRef } from "react";
-import { cursorTAtom, type Viewport, viewAtom } from "./atoms.js";
+import { cursorTAtom, liveAtom, type Viewport, viewAtom } from "./atoms.js";
 
 export function useSyncedView(): void {
   const [view, setView] = useAtom(viewAtom);
   const [cursorT, setCursorT] = useAtom(cursorTAtom);
   const lastRemoteView = useRef<Viewport | null>(null);
   const lastRemoteCursorT = useRef<number | null | undefined>(undefined);
+  // cor-CORE.CORRELATE-000009: the live flag is broadcast only when it
+  // changes here -- never on mount, so a newly opened window can't resume
+  // the main window's paused view.
+  const [live, setLive] = useAtom(liveAtom);
+  const lastLive = useRef(live);
 
   useEffect(() => {
     return window.correlator.onSync((message) => {
@@ -34,9 +39,12 @@ export function useSyncedView(): void {
       } else if (message.type === "cursor") {
         lastRemoteCursorT.current = message.cursorT;
         setCursorT(message.cursorT);
+      } else if (message.type === "live") {
+        lastLive.current = message.live;
+        setLive(message.live);
       }
     });
-  }, [setView, setCursorT]);
+  }, [setView, setCursorT, setLive]);
 
   useEffect(() => {
     const last = lastRemoteView.current;
@@ -48,4 +56,10 @@ export function useSyncedView(): void {
     if (lastRemoteCursorT.current === cursorT) return;
     window.correlator.broadcastSync({ type: "cursor", cursorT });
   }, [cursorT]);
+
+  useEffect(() => {
+    if (lastLive.current === live) return;
+    lastLive.current = live;
+    window.correlator.broadcastSync({ type: "live", live });
+  }, [live]);
 }

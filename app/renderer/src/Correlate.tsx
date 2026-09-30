@@ -1,5 +1,5 @@
-import { useAtomValue, useSetAtom } from "jotai/react";
-import { useCallback, useEffect, useState } from "react";
+import { useAtomValue, useSetAtom, useStore } from "jotai/react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DetachPanelKind, DetachViewState } from "../../lib/detach.js";
 import {
   capturePointInTimeSnapshot,
@@ -14,9 +14,11 @@ import {
   interruptionPoint,
   type ResumeFrom,
 } from "./components/InterruptedSessionNotice.js";
-import { cursorTAtom, viewAtom } from "./correlate/atoms.js";
+import { cursorTAtom, liveAtom, viewAtom } from "./correlate/atoms.js";
+import { resumeLive } from "./correlate/correlate.js";
 import { EventDensityLane } from "./correlate/EventDensityLane.js";
 import { LogPanel } from "./correlate/LogPanel.js";
+import { LatestRequest, loadWindow, REFETCH_DEBOUNCE_MS } from "./correlate/liveView.js";
 import {
   defaultWindow,
   epochMsToIso,
@@ -69,6 +71,9 @@ export function Correlate({
   const setView = useSetAtom(viewAtom);
   const setCursorT = useSetAtom(cursorTAtom);
   const cursorT = useAtomValue(cursorTAtom);
+  const live = useAtomValue(liveAtom);
+  const store = useStore();
+  const requests = useRef(new LatestRequest());
   // cor-CORE.SHELL-000008: fetch limit and auto-refresh come from preferences.
   const { queryLimit, autoRefreshMs } = preferenceEffects(useAtomValue(preferencesAtom));
 
@@ -105,20 +110,26 @@ export function Correlate({
     }
   }, [sumpId]);
 
-  /** `quiet` (auto-refresh): no loading state, and a failure keeps the
-   * data already shown instead of replacing the view with an error. */
+  /** `quiet` (auto-refresh, re-fetch): no loading state, and a failure
+   * keeps the data already shown instead of replacing the view with an
+   * error. cor-CORE.CORRELATE-000009: live moves the view to now (keeping
+   * its span); paused queries the view as it is. Only the latest request's
+   * result lands. */
   const load = useCallback(
     async (quiet = false) => {
       if (!quiet) setState({ phase: "loading" });
+      const ticket = requests.current.next();
       try {
-        const { t0, t1 } = defaultWindow(Date.now());
-        setView({ t0, t1 });
+        const isLive = store.get(liveAtom);
+        const { t0, t1 } = loadWindow(store.get(viewAtom), isLive, Date.now());
+        if (isLive) setView({ t0, t1 });
         const page = await window.correlator.queryRecords(sumpId, {
           kind: "both",
           start: epochMsToIso(t0),
           end: epochMsToIso(t1),
           limit: queryLimit,
         });
+        if (!requests.current.isLatest(ticket)) return;
         setRecords(page.records);
         setState({ phase: "ready" });
 
@@ -131,10 +142,12 @@ export function Correlate({
           setEvalResults(evals);
         }
       } catch (err) {
-        if (!quiet) setState({ phase: "error", message: errorMessage(err) });
+        if (!quiet && requests.current.isLatest(ticket)) {
+          setState({ phase: "error", message: errorMessage(err) });
+        }
       }
     },
-    [sumpId, setView, queryLimit],
+    [sumpId, setView, queryLimit, store],
   );
 
   const loadSession = useCallback(async () => {
@@ -148,12 +161,27 @@ export function Correlate({
     }
   }, [sumpId]);
 
+  // A (re)mounted or switched view starts live on the default window.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset per Sump.
   useEffect(() => {
     setCursorT(null);
+    store.set(liveAtom, true);
+    setView(defaultWindow(Date.now()));
+  }, [sumpId, store, setView, setCursorT]);
+
+  useEffect(() => {
     load();
     loadSession();
     loadEventRules();
-  }, [load, loadSession, loadEventRules, setCursorT]);
+  }, [load, loadSession, loadEventRules]);
+
+  // cor-CORE.CORRELATE-000009 §5: a paused view that moves is re-queried.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run on each move.
+  useEffect(() => {
+    if (live) return;
+    const timer = setTimeout(() => load(true), REFETCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [live, view.t0, view.t1, load]);
 
   useEffect(() => {
     if (autoRefreshMs === null) return;
@@ -351,6 +379,18 @@ export function Correlate({
         <button type="button" onClick={() => load()}>
           Refresh
         </button>
+        {!live && (
+          <button
+            type="button"
+            title="Follow now again, keeping the current span"
+            onClick={() => {
+              resumeLive(store);
+              load();
+            }}
+          >
+            Resume live
+          </button>
+        )}
 
         <span style={{ fontWeight: "bold" }}>
           Recording Session: {sessionStatus.toUpperCase()}

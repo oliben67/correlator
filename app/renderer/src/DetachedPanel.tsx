@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { preferenceEffects, preferencesAtom } from "./appPreferences.js";
 import { viewAtom } from "./correlate/atoms.js";
 import { LogPanel } from "./correlate/LogPanel.js";
+import { REFETCH_DEBOUNCE_MS } from "./correlate/liveView.js";
 import { epochMsToIso, toLogRows } from "./correlate/recordMapping.js";
 import { SeriesCharts, useSeriesPalette } from "./correlate/SeriesCharts.js";
 import { useSyncedSeries } from "./correlate/useSyncedSeries.js";
@@ -29,24 +30,29 @@ export function DetachedPanel({ kind, sumpId }: DetachedPanelProps) {
   const { queryLimit } = preferenceEffects(useAtomValue(preferencesAtom));
   const palette = useSeriesPalette(records);
 
+  // cor-CORE.CORRELATE-000009 §5: debounced, so a wheel zoom doesn't
+  // fire one query per notch; a superseded request never lands.
   useEffect(() => {
     let cancelled = false;
-    window.correlator
-      .queryRecords(sumpId, {
-        kind: "both",
-        start: epochMsToIso(view.t0),
-        end: epochMsToIso(view.t1),
-        limit: queryLimit,
-      })
-      .then((page) => {
-        if (!cancelled) setRecords(page.records);
-      })
-      .catch(() => {
-        // Best effort -- a detached panel showing stale data on a
-        // transient fetch error isn't worth its own error UI.
-      });
+    const timer = setTimeout(() => {
+      window.correlator
+        .queryRecords(sumpId, {
+          kind: "both",
+          start: epochMsToIso(view.t0),
+          end: epochMsToIso(view.t1),
+          limit: queryLimit,
+        })
+        .then((page) => {
+          if (!cancelled) setRecords(page.records);
+        })
+        .catch(() => {
+          // Best effort -- a detached panel showing stale data on a
+          // transient fetch error isn't worth its own error UI.
+        });
+    }, REFETCH_DEBOUNCE_MS);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [sumpId, view.t0, view.t1, queryLimit]);
 

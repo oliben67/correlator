@@ -14,6 +14,10 @@ export const viewAtom = atom<Viewport>({ t0: 0, t1: 60_000 });
 
 export const cursorTAtom = atom<number | null>(null);
 
+/** cor-CORE.CORRELATE-000009: the Correlate view follows now (true) until a
+ * zoom, pan or recenter pauses it. Shared across windows. */
+export const liveAtom = atom(true);
+
 /** ± tolerance (ms) for "this row is highlighted by the current cursor". */
 export const windowMsAtom = atom<number>(5000);
 

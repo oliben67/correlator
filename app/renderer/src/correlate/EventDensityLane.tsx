@@ -2,15 +2,15 @@
  * Thin React wrapper (cor-CORE.CORRELATE-003) -- one lane per log
  * source. Fill opacity is bucketed (`densityBuckets.ts`); click
  * resolution is continuous, resolved through the same `xToT` mapping
- * every other component uses, never bucket-snapped.
+ * every other component uses, never bucket-snapped. Gestures are the
+ * charts' own (`useChartGestures`, cor-CORE.CORRELATE-000009).
  */
 
-import { useAtomValue, useStore } from "jotai/react";
+import { useAtomValue } from "jotai/react";
 import { useEffect, useRef } from "react";
 import { viewAtom } from "./atoms.js";
-import { setCursor } from "./correlate.js";
 import { bucketize } from "./densityBuckets.js";
-import { xToT } from "./timeMapping.js";
+import { useChartGestures } from "./useChartGestures.js";
 
 export interface EventDensityLaneProps {
   recordTimestamps: number[];
@@ -24,8 +24,8 @@ export function EventDensityLane({
   height = LANE_HEIGHT,
 }: EventDensityLaneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const store = useStore();
   const view = useAtomValue(viewAtom);
+  const gestures = useChartGestures(canvasRef);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -52,13 +52,15 @@ export function EventDensityLane({
     ctx.globalAlpha = 1;
   }, [view, recordTimestamps, height]);
 
-  const handleClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    setCursor(store, xToT(x, view, rect.width));
-  };
-
-  return <canvas ref={canvasRef} style={{ width: "100%", height }} onClick={handleClick} />;
+  return (
+    <div style={{ position: "relative" }}>
+      <canvas
+        ref={canvasRef}
+        style={{ width: "100%", height, display: "block" }}
+        onMouseDown={gestures.onMouseDown}
+        onDoubleClick={gestures.onDoubleClick}
+      />
+      {gestures.band}
+    </div>
+  );
 }

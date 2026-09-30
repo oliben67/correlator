@@ -1,6 +1,6 @@
 /**
- * The two mutators of cor-CORE.CORRELATE-001's shared state
- * (cor-CORE.CORRELATE-005) -- every click handler in every component
+ * The mutators of cor-CORE.CORRELATE-001's shared state
+ * (cor-CORE.CORRELATE-005, with zoomTo/resumeLive from cor-CORE.CORRELATE-000009) -- every click handler in every component
  * calls one of these, never a component-local state update. Takes a
  * Jotai `Store` explicitly (not the implicit default store), matching
  * Phase 4's `shell.ts` dependency-injection precedent -- directly
@@ -9,7 +9,7 @@
  */
 
 import type { createStore } from "jotai/vanilla";
-import { cursorTAtom, viewAtom } from "./atoms.js";
+import { cursorTAtom, liveAtom, type Viewport, viewAtom } from "./atoms.js";
 
 // jotai/vanilla's Store type isn't re-exported from its public barrel
 // (only createStore/getDefaultStore are) -- derive it from createStore's
@@ -31,4 +31,16 @@ export function recenterOn(store: Store, t: number): void {
   const span = t1 - t0;
   store.set(viewAtom, { t0: t - span / 2, t1: t + span / 2 });
   store.set(cursorTAtom, t);
+  store.set(liveAtom, false);
+}
+
+/** A zoom or pan gesture: move the view and pause live follow. */
+export function zoomTo(store: Store, view: Viewport): void {
+  store.set(viewAtom, view);
+  store.set(liveAtom, false);
+}
+
+/** Follow now again; the next load moves the view (keeping its span). */
+export function resumeLive(store: Store): void {
+  store.set(liveAtom, true);
 }

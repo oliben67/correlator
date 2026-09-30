@@ -325,6 +325,8 @@ export interface DetachedPanelClosedPayload {
 export type SyncMessage =
   | { type: "view"; t0: number; t1: number }
   | { type: "cursor"; cursorT: number | null }
+  // cor-CORE.CORRELATE-000009: live follow on/off.
+  | { type: "live"; live: boolean }
   | { type: "nav"; view: "correlate" | "project" | "sumps" | "events" | "preferences" | "about" }
   // cor-CORE.CORRELATE-000007: container hide/order, and a new window asking for it.
   | { type: "series"; hidden: string[]; order: string[] }

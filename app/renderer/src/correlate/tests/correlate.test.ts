@@ -1,7 +1,7 @@
 import { createStore } from "jotai/vanilla";
 import { beforeEach, describe, expect, it } from "vitest";
-import { cursorTAtom, viewAtom } from "../atoms.js";
-import { recenterOn, type Store, setCursor } from "../correlate.js";
+import { cursorTAtom, liveAtom, viewAtom } from "../atoms.js";
+import { recenterOn, resumeLive, type Store, setCursor, zoomTo } from "../correlate.js";
 
 let store: Store;
 
@@ -16,6 +16,11 @@ describe("cor-CORE.CORRELATE-005: setCursor", () => {
     setCursor(store, 30_000);
     expect(store.get(cursorTAtom)).toBe(30_000);
     expect(store.get(viewAtom)).toEqual(before);
+  });
+
+  it("leaves live follow alone", () => {
+    setCursor(store, 30_000);
+    expect(store.get(liveAtom)).toBe(true);
   });
 });
 
@@ -43,5 +48,27 @@ describe("cor-CORE.CORRELATE-005: recenterOn", () => {
     expect(view.t1 - view.t0).toBe(10_000);
     expect(view.t0).toBe(45_000);
     expect(view.t1).toBe(55_000);
+  });
+});
+
+describe("cor-CORE.CORRELATE-000009: recenterOn, zoomTo and resumeLive", () => {
+  it("recenterOn pauses live follow", () => {
+    recenterOn(store, 100_000);
+    expect(store.get(liveAtom)).toBe(false);
+  });
+
+  it("zoomTo sets the view and pauses live follow, leaving the cursor alone", () => {
+    store.set(cursorTAtom, 5_000);
+    zoomTo(store, { t0: 1_000, t1: 2_000 });
+    expect(store.get(viewAtom)).toEqual({ t0: 1_000, t1: 2_000 });
+    expect(store.get(liveAtom)).toBe(false);
+    expect(store.get(cursorTAtom)).toBe(5_000);
+  });
+
+  it("resumeLive follows now again without moving the view itself", () => {
+    zoomTo(store, { t0: 1_000, t1: 2_000 });
+    resumeLive(store);
+    expect(store.get(liveAtom)).toBe(true);
+    expect(store.get(viewAtom)).toEqual({ t0: 1_000, t1: 2_000 });
   });
 });
