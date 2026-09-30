@@ -85,6 +85,23 @@ describe("cor-CORE.CORRELATE-000007: SeriesCharts", () => {
     expect(markup).toMatch(/aria-pressed="false"[^>]*data-series="c-db"/);
   });
 
+  it("BUG-000010: never lists host (__system__) metrics as a container", () => {
+    const hostMetric = {
+      kind: "metric",
+      docker_host: "h1",
+      container_id: "__system__",
+      container_name: "__system__",
+      metric_scope: "system",
+      ts: "2026-09-29T00:00:00Z",
+      seq: 9,
+      cpu_pct: 80,
+      mem_pct: 60,
+    } as unknown as SumpRecord;
+    const markup = withStore(createElement(SeriesCharts, { records: [...records, hostMetric] }));
+    expect(markup).not.toContain("__system__");
+    expect(markup).toContain('data-strip="cpu_pct" data-series-count="2"');
+  });
+
   it("orders the legend by the saved order", () => {
     const markup = withStore(createElement(SeriesCharts, { records }), (store) =>
       store.set(seriesOrderAtom, ["c-web", "c-db"]),

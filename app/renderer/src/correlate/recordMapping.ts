@@ -32,10 +32,25 @@ function isMetricRecord(record: SumpRecord): record is MetricRecord {
   return record.kind === "metric";
 }
 
+/** The Sump's id for daemon-level (host) metrics (log-sump-common
+ * `SYSTEM_SCOPE_ID`). */
+export const SYSTEM_SCOPE_ID = "__system__";
+
+/** BUG-000010: a host (system) metric, never a container. The Sump marks it
+ * with `metric_scope: "system"`; records from before that field carry only
+ * the `__system__` container id. */
+export function isHostMetric(record: SumpRecord): boolean {
+  return (
+    isMetricRecord(record) &&
+    (record.metric_scope === "system" || record.container_id === SYSTEM_SCOPE_ID)
+  );
+}
+
 /** cor-CORE.CORRELATE-000007: the one key a container's metrics and logs
  * share (container id, else name). A log with neither belongs to its docker
  * host; a metric with neither (host/system telemetry) has no series here. */
 export function seriesKeyOf(record: SumpRecord): string | undefined {
+  if (isHostMetric(record)) return undefined;
   const key = record.container_id ?? record.container_name;
   if (key) return key;
   return isLogRecord(record) ? record.docker_host : undefined;
@@ -84,7 +99,7 @@ export type MetricField =
 export function metricContainerIds(records: SumpRecord[]): string[] {
   const seen: string[] = [];
   for (const record of records) {
-    if (!isMetricRecord(record)) continue;
+    if (!isMetricRecord(record) || isHostMetric(record)) continue;
     const id = record.container_id ?? record.container_name;
     if (id && !seen.includes(id)) seen.push(id);
   }
@@ -106,7 +121,7 @@ export function toChartPoints(
 ): ChartPoint[] {
   const points: ChartPoint[] = [];
   for (const record of records) {
-    if (!isMetricRecord(record)) continue;
+    if (!isMetricRecord(record) || isHostMetric(record)) continue;
     const id = record.container_id ?? record.container_name;
     if (containerId !== undefined && id !== containerId) continue;
     const v = record[field];

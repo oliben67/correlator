@@ -186,3 +186,47 @@ describe("cor-CORE.CORRELATE-000007: series keys", () => {
     ]);
   });
 });
+
+// BUG-000010: host metrics arrive as `container_id = "__system__"`,
+// `metric_scope = "system"` (log-sump-common SYSTEM_SCOPE_ID) and must never
+// become a container series (cor-CORE.CORRELATE-000007 §1).
+describe("BUG-000010: host metrics are not containers", () => {
+  const host = (over: Record<string, unknown> = {}) =>
+    ({
+      kind: "metric",
+      docker_host: "h1",
+      container_id: "__system__",
+      container_name: "__system__",
+      metric_scope: "system",
+      ts: "2026-09-30T00:00:00Z",
+      seq: 1,
+      cpu_pct: 42,
+      ...over,
+    }) as never;
+  const container = {
+    kind: "metric",
+    docker_host: "h1",
+    container_id: "c1",
+    container_name: "web",
+    metric_scope: "container",
+    ts: "2026-09-30T00:00:00Z",
+    seq: 2,
+    cpu_pct: 7,
+  } as never;
+
+  it("gives a host metric no container series key", async () => {
+    const { seriesKeyOf, isHostMetric } = await import("../recordMapping.js");
+    expect(isHostMetric(host())).toBe(true);
+    expect(isHostMetric(host({ metric_scope: undefined }))).toBe(true); // pre-field records
+    expect(isHostMetric(container)).toBe(false);
+    expect(seriesKeyOf(host())).toBeUndefined();
+  });
+
+  it("keeps hosts out of the container list and container points", async () => {
+    const { metricContainerIds, toChartPoints } = await import("../recordMapping.js");
+    const records = [host(), container];
+    expect(metricContainerIds(records)).toEqual(["c1"]);
+    expect(toChartPoints(records, "cpu_pct").map((p) => p.v)).toEqual([7]);
+    expect(toChartPoints(records, "cpu_pct", "__system__")).toEqual([]);
+  });
+});
