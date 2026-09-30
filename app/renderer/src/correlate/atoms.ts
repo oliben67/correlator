@@ -23,3 +23,6 @@ export const hiddenSeriesAtom = atom<string[]>([]);
 export const seriesOrderAtom = atom<string[]>([]);
 /** Color slot per series key, assigned once and never reassigned. */
 export const seriesSlotsAtom = atom<Readonly<Record<string, number>>>({});
+
+/** cor-CORE.CORRELATE-000008: the host telemetry group is collapsed. Session-only. */
+export const hostGroupCollapsedAtom = atom(false);

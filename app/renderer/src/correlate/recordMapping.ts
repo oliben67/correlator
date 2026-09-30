@@ -140,3 +140,24 @@ export function metricSeries(
 ): { key: string; points: ChartPoint[] }[] {
   return keys.map((key) => ({ key, points: toChartPoints(records, field, key) }));
 }
+
+/** cor-CORE.CORRELATE-000008: `field` of the host (system) metrics, one
+ * series per docker host, each sorted by time. */
+export function hostMetricSeries(
+  records: SumpRecord[],
+  field: MetricField,
+): { host: string; points: ChartPoint[] }[] {
+  const byHost = new Map<string, ChartPoint[]>();
+  for (const record of records) {
+    if (!isMetricRecord(record) || !isHostMetric(record)) continue;
+    const v = record[field];
+    if (typeof v !== "number") continue;
+    const host = record.docker_host;
+    if (!byHost.has(host)) byHost.set(host, []);
+    byHost.get(host)?.push({ t: tsToEpochMs(record.ts), v });
+  }
+  return [...byHost.entries()].map(([host, points]) => ({
+    host,
+    points: points.sort((a, b) => a.t - b.t),
+  }));
+}

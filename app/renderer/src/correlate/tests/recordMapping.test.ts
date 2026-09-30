@@ -230,3 +230,41 @@ describe("BUG-000010: host metrics are not containers", () => {
     expect(toChartPoints(records, "cpu_pct", "__system__")).toEqual([]);
   });
 });
+
+describe("cor-CORE.CORRELATE-000008: hostMetricSeries", () => {
+  const host = (dockerHost: string, cpu: number, ts: string) =>
+    ({
+      kind: "metric",
+      docker_host: dockerHost,
+      container_id: "__system__",
+      container_name: "__system__",
+      metric_scope: "system",
+      ts,
+      seq: 1,
+      cpu_pct: cpu,
+    }) as never;
+
+  it("returns one time-sorted series per docker host, and ignores containers", async () => {
+    const { hostMetricSeries } = await import("../recordMapping.js");
+    const series = hostMetricSeries(
+      [
+        host("h1", 20, "2026-09-30T00:00:05Z"),
+        host("h2", 5, "2026-09-30T00:00:00Z"),
+        host("h1", 10, "2026-09-30T00:00:00Z"),
+        {
+          kind: "metric",
+          docker_host: "h1",
+          container_id: "c1",
+          ts: "2026-09-30T00:00:00Z",
+          seq: 2,
+          cpu_pct: 99,
+        } as never,
+      ],
+      "cpu_pct",
+    );
+    expect(series.map((s) => [s.host, s.points.map((p) => p.v)])).toEqual([
+      ["h1", [10, 20]],
+      ["h2", [5]],
+    ]);
+  });
+});

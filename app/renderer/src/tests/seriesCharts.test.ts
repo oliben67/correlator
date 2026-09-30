@@ -3,7 +3,7 @@ import { Provider } from "jotai/react";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { hiddenSeriesAtom, seriesOrderAtom } from "../correlate/atoms.js";
+import { hiddenSeriesAtom, hostGroupCollapsedAtom, seriesOrderAtom } from "../correlate/atoms.js";
 import { Legend } from "../correlate/Legend.js";
 import { LogPanel } from "../correlate/LogPanel.js";
 import { SeriesCharts } from "../correlate/SeriesCharts.js";
@@ -132,5 +132,46 @@ describe("cor-CORE.CORRELATE-000007: series sync", () => {
   it("compares hidden sets by content and order by position", () => {
     expect(seriesStateKey(["b", "a"], ["x", "y"])).toBe(seriesStateKey(["a", "b"], ["x", "y"]));
     expect(seriesStateKey([], ["x", "y"])).not.toBe(seriesStateKey([], ["y", "x"]));
+  });
+});
+
+describe("cor-CORE.CORRELATE-000008: host telemetry group", () => {
+  const hostMetric = (cpu: number, mem: number) =>
+    ({
+      kind: "metric",
+      docker_host: "h1",
+      container_id: "__system__",
+      container_name: "__system__",
+      metric_scope: "system",
+      ts: "2026-09-29T00:00:00Z",
+      seq: 9,
+      cpu_pct: cpu,
+      mem_pct: mem,
+    }) as unknown as SumpRecord;
+
+  it("draws host telemetry in its own group, never on the container strips", () => {
+    const markup = withStore(
+      createElement(SeriesCharts, { records: [...records, hostMetric(80, 60)] }),
+    );
+    expect(markup).toContain('data-group="host"');
+    expect(markup).toContain("Host telemetry — h1");
+    expect(markup).toContain('data-host-strip="cpu_pct" data-series-count="1"');
+    expect(markup).toContain('data-host-strip="mem_pct" data-series-count="1"');
+    expect(markup).toContain('data-strip="cpu_pct" data-series-count="2"'); // containers only
+    expect(markup).toContain('aria-label="Host CPU %"');
+  });
+
+  it("isn't rendered without host data", () => {
+    const markup = withStore(createElement(SeriesCharts, { records }));
+    expect(markup).not.toContain('data-group="host"');
+  });
+
+  it("collapses to its heading", () => {
+    const markup = withStore(
+      createElement(SeriesCharts, { records: [...records, hostMetric(1, 1)] }),
+      (store) => store.set(hostGroupCollapsedAtom, true),
+    );
+    expect(markup).toContain('aria-expanded="false"');
+    expect(markup).not.toContain("data-host-strip=");
   });
 });
