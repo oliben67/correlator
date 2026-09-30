@@ -6,6 +6,7 @@
 import type { Catalog } from "./catalog.ts";
 
 export type ThemeMode = "light" | "dark" | "system";
+export type NowLineStyle = "dotted" | "dashed" | "solid";
 
 export interface AppPreferences {
   /** Record fetch limit of the Correlate view's load. */
@@ -20,6 +21,16 @@ export interface AppPreferences {
   /** `--hl-color` override, `#rrggbb`. */
   highlightColor: string;
   showStatusBar: boolean;
+  /** cor-CORE.CORRELATE-000011: the now line's color, `#rrggbb`. */
+  nowLineColor: string;
+  nowLineStyle: NowLineStyle;
+  /** The live-track marker's color, `#rrggbb`. */
+  liveTrackColor: string;
+  liveTrackEnabled: boolean;
+  /** Where the live-track marker sits relative to now, in seconds (≤ 0). */
+  liveTrackOffsetSeconds: number;
+  /** Delay before a recenter that interrupted live resumes it; 0 = never. */
+  recenterResumeSeconds: number;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -30,6 +41,12 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   notificationClearSeconds: 5,
   highlightColor: "#eaff00",
   showStatusBar: true,
+  nowLineColor: "#14b8a6",
+  nowLineStyle: "dotted",
+  liveTrackColor: "#22c55e",
+  liveTrackEnabled: true,
+  liveTrackOffsetSeconds: 0,
+  recenterResumeSeconds: 10,
 };
 
 const PREF_KEY_PREFIX = "pref_";
@@ -50,29 +67,51 @@ const integerAtLeast = (min: number): FieldSpec<number> => ({
   serialize: String,
 });
 
+const integerAtMost = (max: number): FieldSpec<number> => ({
+  parse(raw) {
+    const n = Number(raw);
+    return raw.trim() !== "" && Number.isInteger(n) && n <= max ? n : null;
+  },
+  valid: (v): v is number => typeof v === "number" && Number.isInteger(v) && v <= max,
+  serialize: String,
+});
+
+const oneOf = <T extends string>(values: readonly T[]): FieldSpec<T> => ({
+  parse: (raw) => (values.includes(raw as T) ? (raw as T) : null),
+  valid: (v): v is T => values.includes(v as T),
+  serialize: String,
+});
+
 const THEMES: readonly ThemeMode[] = ["light", "dark", "system"];
+const NOW_LINE_STYLES: readonly NowLineStyle[] = ["dotted", "dashed", "solid"];
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+
+const hexColor: FieldSpec<string> = {
+  parse: (raw) => (HEX_COLOR.test(raw) ? raw.toLowerCase() : null),
+  valid: (v): v is string => typeof v === "string" && HEX_COLOR.test(v),
+  serialize: (v) => v.toLowerCase(),
+};
+
+const boolean: FieldSpec<boolean> = {
+  parse: (raw) => (raw === "true" ? true : raw === "false" ? false : null),
+  valid: (v): v is boolean => typeof v === "boolean",
+  serialize: String,
+};
 
 const FIELDS: { [K in keyof AppPreferences]: FieldSpec<AppPreferences[K]> } = {
   defaultQueryLimit: integerAtLeast(1),
   autoRefreshIntervalSeconds: integerAtLeast(0),
   logHighlightWindowSeconds: integerAtLeast(1),
   notificationClearSeconds: integerAtLeast(1),
-  theme: {
-    parse: (raw) => (THEMES.includes(raw as ThemeMode) ? (raw as ThemeMode) : null),
-    valid: (v): v is ThemeMode => THEMES.includes(v as ThemeMode),
-    serialize: String,
-  },
-  highlightColor: {
-    parse: (raw) => (HEX_COLOR.test(raw) ? raw.toLowerCase() : null),
-    valid: (v): v is string => typeof v === "string" && HEX_COLOR.test(v),
-    serialize: (v) => v.toLowerCase(),
-  },
-  showStatusBar: {
-    parse: (raw) => (raw === "true" ? true : raw === "false" ? false : null),
-    valid: (v): v is boolean => typeof v === "boolean",
-    serialize: String,
-  },
+  theme: oneOf(THEMES),
+  highlightColor: hexColor,
+  showStatusBar: boolean,
+  nowLineColor: hexColor,
+  nowLineStyle: oneOf(NOW_LINE_STYLES),
+  liveTrackColor: hexColor,
+  liveTrackEnabled: boolean,
+  liveTrackOffsetSeconds: integerAtMost(0),
+  recenterResumeSeconds: integerAtLeast(0),
 };
 
 const FIELD_NAMES = Object.keys(FIELDS) as (keyof AppPreferences)[];

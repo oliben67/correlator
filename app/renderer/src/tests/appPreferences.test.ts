@@ -20,7 +20,22 @@ describe("cor-CORE.SHELL-000008: preferenceEffects", () => {
       showStatusBar: true,
       queryLimit: 100,
       autoRefreshMs: null,
+      nowLineColor: "#14b8a6",
+      liveTrackColor: "#22c55e",
+      nowLineStyle: "dotted",
+      liveTrackEnabled: true,
+      liveTrackOffsetMs: 0,
+      recenterResumeMs: 10_000,
     });
+  });
+
+  it("cor-CORE.CORRELATE-000011: converts the live-mark seconds to ms", () => {
+    const e = preferenceEffects({
+      ...DEFAULT_PREFERENCES,
+      liveTrackOffsetSeconds: -3,
+      recenterResumeSeconds: 0,
+    });
+    expect(e).toMatchObject({ liveTrackOffsetMs: -3000, recenterResumeMs: 0 });
   });
 
   it("converts seconds to ms and turns a positive refresh interval on", () => {
@@ -109,6 +124,12 @@ describe("cor-CORE.SHELL-000008: PreferencesForm", () => {
       "theme",
       "highlightColor",
       "showStatusBar",
+      "nowLineColor",
+      "nowLineStyle",
+      "liveTrackColor",
+      "liveTrackEnabled",
+      "liveTrackOffsetSeconds",
+      "recenterResumeSeconds",
     ]) {
       expect(markup).toContain(`name="${name}"`);
     }
@@ -118,14 +139,7 @@ describe("cor-CORE.SHELL-000008: PreferencesForm", () => {
 
   it("offers no field for features correlator doesn't have yet", () => {
     const markup = render().toLowerCase();
-    for (const absent of [
-      "live-track",
-      "livetrack",
-      "now line",
-      "capture band",
-      "sprocket",
-      "autostart",
-    ]) {
+    for (const absent of ["capture band", "sprocket", "autostart", "own logs"]) {
       expect(markup).not.toContain(absent);
     }
   });

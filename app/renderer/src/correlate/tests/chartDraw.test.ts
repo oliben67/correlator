@@ -244,3 +244,47 @@ describe("cor-CORE.CORRELATE-000010: axes in drawChartStrip", () => {
     expect(noAxis.calls.filter((c) => c.startsWith("fillText"))).toHaveLength(3);
   });
 });
+
+// cor-CORE.CORRELATE-000011 (REQ-000039): the now line and live-track marker.
+describe("cor-CORE.CORRELATE-000011: live marks in drawChartStrip", () => {
+  const base = { view, plotWidth, height, cursorT: null, points: [] };
+
+  it.each([
+    ["dotted", "2,4"],
+    ["dashed", "8,5"],
+    ["solid", ""],
+  ] as const)("draws a %s now line at now", (style, dash) => {
+    const ctx = fakeCtx();
+    drawChartStrip(ctx, { ...base, nowT: 50_000, nowLineStyle: style });
+    expect(ctx.calls).toEqual([
+      "clearRect(0,0,500,100)",
+      `setLineDash(${dash})`,
+      "beginPath",
+      "moveTo(250,0)",
+      "lineTo(250,100)",
+      "stroke",
+      "setLineDash()",
+    ]);
+  });
+
+  it("draws the live-track marker as a line with a 6px cap", () => {
+    const ctx = fakeCtx();
+    drawChartStrip(ctx, { ...base, liveTrackT: 20_000 });
+    expect(ctx.calls.slice(1)).toEqual([
+      "beginPath",
+      "moveTo(100,0)",
+      "lineTo(100,100)",
+      "stroke",
+      "beginPath",
+      "moveTo(100,0)",
+      "lineTo(100,6)",
+      "stroke",
+    ]);
+  });
+
+  it("draws neither mark out of view or without a time", () => {
+    const ctx = fakeCtx();
+    drawChartStrip(ctx, { ...base, nowT: 150_000, liveTrackT: null });
+    expect(ctx.calls).toEqual(["clearRect(0,0,500,100)"]);
+  });
+});

@@ -41,13 +41,14 @@ export function PreferencesForm({
   const set = <K extends keyof PreferenceForm>(key: K, value: PreferenceForm[K]) =>
     onChange({ ...form, [key]: value });
 
-  const numberField = (key: keyof PreferenceForm, label: string, min: number) => (
+  const numberField = (key: keyof PreferenceForm, label: string, min?: number, max?: number) => (
     <label style={fieldStyle}>
       <span>{label}</span>
       <input
         type="number"
         name={key}
         min={min}
+        max={max}
         step={1}
         value={form[key] as string}
         onChange={(e) => set(key, e.target.value as never)}
@@ -75,6 +76,27 @@ export function PreferencesForm({
             1,
           )}
           {numberField("notificationClearSeconds", "Status-bar notifications stay (seconds)", 1)}
+          {/* cor-CORE.CORRELATE-000011 */}
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              name="liveTrackEnabled"
+              checked={form.liveTrackEnabled}
+              onChange={(e) => set("liveTrackEnabled", e.target.checked)}
+            />
+            <span>Show the live-track marker</span>
+          </label>
+          {numberField(
+            "liveTrackOffsetSeconds",
+            "Live-track marker offset from now (seconds, 0 or less)",
+            undefined,
+            0,
+          )}
+          {numberField(
+            "recenterResumeSeconds",
+            "Resume live after a recenter (seconds, 0 = never)",
+            0,
+          )}
         </div>
       </Panel>
 
@@ -102,6 +124,40 @@ export function PreferencesForm({
               onChange={(e) => set("highlightColor", e.target.value)}
             />
             {errors.highlightColor && <span style={errorStyle}>{errors.highlightColor}</span>}
+          </label>
+          <label style={fieldStyle}>
+            <span>Now line color</span>
+            <input
+              type="color"
+              name="nowLineColor"
+              value={form.nowLineColor}
+              onChange={(e) => set("nowLineColor", e.target.value)}
+            />
+            {errors.nowLineColor && <span style={errorStyle}>{errors.nowLineColor}</span>}
+          </label>
+          <label style={fieldStyle}>
+            <span>Now line style</span>
+            <select
+              name="nowLineStyle"
+              value={form.nowLineStyle}
+              onChange={(e) =>
+                set("nowLineStyle", e.target.value as PreferenceForm["nowLineStyle"])
+              }
+            >
+              <option value="dotted">Dotted</option>
+              <option value="dashed">Dashed</option>
+              <option value="solid">Solid</option>
+            </select>
+          </label>
+          <label style={fieldStyle}>
+            <span>Live-track marker color</span>
+            <input
+              type="color"
+              name="liveTrackColor"
+              value={form.liveTrackColor}
+              onChange={(e) => set("liveTrackColor", e.target.value)}
+            />
+            {errors.liveTrackColor && <span style={errorStyle}>{errors.liveTrackColor}</span>}
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <input

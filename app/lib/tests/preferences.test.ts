@@ -44,6 +44,17 @@ describe("Preferences", () => {
 
 // cor-CORE.SHELL-000008 (REQ-000030): the Settings/Appearance fields.
 describe("cor-CORE.SHELL-000008: effective preferences", () => {
+  it("cor-CORE.CORRELATE-000011: defaults the live-mark fields per the rule", () => {
+    expect(DEFAULT_PREFERENCES).toMatchObject({
+      nowLineColor: "#14b8a6",
+      nowLineStyle: "dotted",
+      liveTrackColor: "#22c55e",
+      liveTrackEnabled: true,
+      liveTrackOffsetSeconds: 0,
+      recenterResumeSeconds: 10,
+    });
+  });
+
   it("defaults the new fields per the rule", () => {
     expect(DEFAULT_PREFERENCES).toMatchObject({
       logHighlightWindowSeconds: 5,
@@ -63,6 +74,12 @@ describe("cor-CORE.SHELL-000008: effective preferences", () => {
       notificationClearSeconds: 9,
       highlightColor: "#12ab34",
       showStatusBar: false,
+      nowLineColor: "#010203",
+      nowLineStyle: "dashed" as const,
+      liveTrackColor: "#0a0b0c",
+      liveTrackEnabled: false,
+      liveTrackOffsetSeconds: -5,
+      recenterResumeSeconds: 0,
     };
     expect(savePreferences(catalog, all)).toEqual(all);
     expect(getPreferences(catalog)).toEqual(all);
@@ -82,6 +99,8 @@ describe("cor-CORE.SHELL-000008: effective preferences", () => {
     catalog.setSetting("pref_highlightColor", "yellow");
     catalog.setSetting("pref_showStatusBar", "yes");
     catalog.setSetting("pref_defaultQueryLimit", "abc");
+    catalog.setSetting("pref_liveTrackOffsetSeconds", "3");
+    catalog.setSetting("pref_nowLineStyle", "wavy");
     expect(getPreferences(catalog)).toEqual(DEFAULT_PREFERENCES);
     catalog.close();
   });
@@ -95,6 +114,13 @@ describe("cor-CORE.SHELL-000008: effective preferences", () => {
     [{ theme: "sepia" }],
     [{ showStatusBar: "false" }],
     [{ autoStartLocalSump: true }],
+    [{ nowLineColor: "teal" }],
+    [{ nowLineStyle: "wavy" }],
+    [{ liveTrackColor: "#12345" }],
+    [{ liveTrackEnabled: 1 }],
+    [{ liveTrackOffsetSeconds: 1 }],
+    [{ liveTrackOffsetSeconds: -0.5 }],
+    [{ recenterResumeSeconds: -1 }],
   ])("refuses to save %o and stores nothing", (update) => {
     const catalog = new Catalog(dbPath);
     expect(() =>

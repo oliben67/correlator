@@ -15,7 +15,7 @@ import {
   type ResumeFrom,
 } from "./components/InterruptedSessionNotice.js";
 import { ModeBadge } from "./components/ModeBadge.js";
-import { cursorTAtom, liveAtom, type Viewport, viewAtom } from "./correlate/atoms.js";
+import { cursorTAtom, liveAtom, resumeAtAtom, type Viewport, viewAtom } from "./correlate/atoms.js";
 import {
   type ChartCapture,
   ChartCaptureContext,
@@ -26,6 +26,7 @@ import { resumeLive } from "./correlate/correlate.js";
 import { EventDensityLane } from "./correlate/EventDensityLane.js";
 import { LogPanel } from "./correlate/LogPanel.js";
 import { LatestRequest, loadWindow, REFETCH_DEBOUNCE_MS } from "./correlate/liveView.js";
+import { Navigator } from "./correlate/Navigator.js";
 import {
   defaultWindow,
   epochMsToIso,
@@ -33,6 +34,7 @@ import {
   toLogRows,
 } from "./correlate/recordMapping.js";
 import { SeriesCharts, useSeriesPalette } from "./correlate/SeriesCharts.js";
+import { useNowTick } from "./correlate/useNowTick.js";
 import type {
   EventRuleSummary,
   RecordingSessionSummary,
@@ -82,6 +84,8 @@ export function Correlate({
   const [captureArmed, setCaptureArmed] = useAtom(captureArmedAtom);
   const store = useStore();
   const requests = useRef(new LatestRequest());
+  // cor-CORE.CORRELATE-000011 §1: the now line / live-track tick (no queries).
+  useNowTick();
   // cor-CORE.SHELL-000008: fetch limit and auto-refresh come from preferences.
   const { queryLimit, autoRefreshMs } = preferenceEffects(useAtomValue(preferencesAtom));
 
@@ -175,6 +179,7 @@ export function Correlate({
     setCursorT(null);
     store.set(liveAtom, true);
     store.set(captureArmedAtom, false);
+    store.set(resumeAtAtom, null);
     setView(defaultWindow(Date.now()));
   }, [sumpId, store, setView, setCursorT]);
 
@@ -183,6 +188,14 @@ export function Correlate({
     loadSession();
     loadEventRules();
   }, [load, loadSession, loadEventRules]);
+
+  // cor-CORE.CORRELATE-000011 §6: going back to live (Resume, the navigator's
+  // "now", a due resume, or another window) reloads at once.
+  const wasLive = useRef(live);
+  useEffect(() => {
+    if (live && !wasLive.current) load(true);
+    wasLive.current = live;
+  }, [live, load]);
 
   // cor-CORE.CORRELATE-000009 §5: a paused view that moves is re-queried.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-run on each move.
@@ -412,10 +425,7 @@ export function Correlate({
           <button
             type="button"
             title="Follow now again, keeping the current span"
-            onClick={() => {
-              resumeLive(store);
-              load();
-            }}
+            onClick={() => resumeLive(store)}
           >
             Resume live
           </button>
@@ -478,7 +488,7 @@ export function Correlate({
       <ChartCaptureContext.Provider value={chartCapture}>
         <EventDensityLane recordTimestamps={toEventTimestamps(records)} />
 
-        <div>
+        <div id="correlate-charts">
           {onDetach && (
             <button
               type="button"
@@ -497,6 +507,7 @@ export function Correlate({
           {!chartDetached && <SeriesCharts records={records} />}
         </div>
       </ChartCaptureContext.Provider>
+      <Navigator />
 
       <div>
         {onDetach && (

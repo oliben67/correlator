@@ -9,10 +9,11 @@
 
 import { useAtomValue } from "jotai/react";
 import { useEffect, useRef } from "react";
-import { cursorTAtom, viewAtom } from "./atoms.js";
+import { cursorTAtom, liveAtom, liveOptionsAtom, nowAtom, viewAtom } from "./atoms.js";
 import { PLOT_MARGIN_LEFT, TIME_AXIS_HEIGHT } from "./axes.js";
 import { type ChartPoint, type ChartSeries, drawChartStrip } from "./chartDraw.js";
 import { resolveColor } from "./colorSlots.js";
+import { liveTrackTime } from "./liveView.js";
 import { useChartGestures } from "./useChartGestures.js";
 
 export interface ChartProps {
@@ -51,6 +52,12 @@ export function Chart({
   const view = useAtomValue(viewAtom);
   const gestures = useChartGestures(canvasRef);
   const cursorT = useAtomValue(cursorTAtom);
+  // cor-CORE.CORRELATE-000011: marks from the live view's tick (null without one).
+  const nowT = useAtomValue(nowAtom);
+  const live = useAtomValue(liveAtom);
+  const liveOptions = useAtomValue(liveOptionsAtom);
+  const liveTrackT = liveTrackTime(nowT, live, liveOptions);
+  const { nowLineStyle } = liveOptions;
 
   const axisHeight = timeAxis ? TIME_AXIS_HEIGHT : 0;
   const fullHeight = height + axisHeight;
@@ -83,8 +90,26 @@ export function Chart({
       cursorColor: resolveColor("var(--text-primary)", readCssVar),
       gridColor: resolveColor("var(--grid)", readCssVar),
       labelColor: resolveColor("var(--muted)", readCssVar),
+      nowT,
+      nowLineStyle,
+      nowLineColor: resolveColor("var(--now-line-color)", readCssVar),
+      liveTrackT,
+      liveTrackColor: resolveColor("var(--live-track-color)", readCssVar),
     });
-  }, [view, points, series, cursorT, fullHeight, axisHeight, unit, minValue, maxValue]);
+  }, [
+    view,
+    points,
+    series,
+    cursorT,
+    fullHeight,
+    axisHeight,
+    unit,
+    minValue,
+    maxValue,
+    nowT,
+    nowLineStyle,
+    liveTrackT,
+  ]);
 
   return (
     <div style={{ position: "relative" }}>

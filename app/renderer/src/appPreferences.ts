@@ -2,7 +2,7 @@ import { atom } from "jotai";
 import { useAtomValue, useSetAtom } from "jotai/react";
 import { useEffect } from "react";
 import { DEFAULT_PREFERENCES } from "../../lib/preferences.js";
-import { windowMsAtom } from "./correlate/atoms.js";
+import { liveOptionsAtom, windowMsAtom } from "./correlate/atoms.js";
 import type { AppPreferencesSummary } from "./correlator-api.js";
 
 // cor-CORE.SHELL-000008 (REQ-000030): every offered preference takes
@@ -26,6 +26,13 @@ export interface PreferenceEffects {
   queryLimit: number;
   /** Correlate auto-reload period, or null when off. */
   autoRefreshMs: number | null;
+  /** cor-CORE.CORRELATE-000011: values for the now-line and live-track color tokens. */
+  nowLineColor: string;
+  liveTrackColor: string;
+  nowLineStyle: AppPreferencesSummary["nowLineStyle"];
+  liveTrackEnabled: boolean;
+  liveTrackOffsetMs: number;
+  recenterResumeMs: number;
 }
 
 export function preferenceEffects(prefs: AppPreferencesSummary): PreferenceEffects {
@@ -37,6 +44,12 @@ export function preferenceEffects(prefs: AppPreferencesSummary): PreferenceEffec
     queryLimit: prefs.defaultQueryLimit,
     autoRefreshMs:
       prefs.autoRefreshIntervalSeconds > 0 ? prefs.autoRefreshIntervalSeconds * 1000 : null,
+    nowLineColor: prefs.nowLineColor,
+    liveTrackColor: prefs.liveTrackColor,
+    nowLineStyle: prefs.nowLineStyle,
+    liveTrackEnabled: prefs.liveTrackEnabled,
+    liveTrackOffsetMs: prefs.liveTrackOffsetSeconds * 1000,
+    recenterResumeMs: prefs.recenterResumeSeconds * 1000,
   };
 }
 
@@ -49,6 +62,12 @@ export interface PreferenceForm {
   theme: AppPreferencesSummary["theme"];
   highlightColor: string;
   showStatusBar: boolean;
+  nowLineColor: string;
+  nowLineStyle: AppPreferencesSummary["nowLineStyle"];
+  liveTrackColor: string;
+  liveTrackEnabled: boolean;
+  liveTrackOffsetSeconds: string;
+  recenterResumeSeconds: string;
 }
 
 export function toPreferenceForm(prefs: AppPreferencesSummary): PreferenceForm {
@@ -60,6 +79,12 @@ export function toPreferenceForm(prefs: AppPreferencesSummary): PreferenceForm {
     theme: prefs.theme,
     highlightColor: prefs.highlightColor,
     showStatusBar: prefs.showStatusBar,
+    nowLineColor: prefs.nowLineColor,
+    nowLineStyle: prefs.nowLineStyle,
+    liveTrackColor: prefs.liveTrackColor,
+    liveTrackEnabled: prefs.liveTrackEnabled,
+    liveTrackOffsetSeconds: String(prefs.liveTrackOffsetSeconds),
+    recenterResumeSeconds: String(prefs.recenterResumeSeconds),
   };
 }
 
@@ -67,17 +92,19 @@ export type PreferenceFormResult =
   | { ok: true; prefs: AppPreferencesSummary }
   | { ok: false; errors: Partial<Record<keyof PreferenceForm, string>> };
 
-function integerField(raw: string, min: number): number | null {
+function integerField(raw: string, min: number, max = Number.POSITIVE_INFINITY): number | null {
   if (raw.trim() === "") return null;
   const n = Number(raw);
-  return Number.isInteger(n) && n >= min ? n : null;
+  return Number.isInteger(n) && n >= min && n <= max ? n : null;
 }
+
+const HEX = /^#[0-9a-f]{6}$/;
 
 /** Validates the form against cor-CORE.SHELL-000008's validity column. */
 export function validatePreferenceForm(form: PreferenceForm): PreferenceFormResult {
   const errors: Partial<Record<keyof PreferenceForm, string>> = {};
-  const int = (key: keyof PreferenceForm, min: number, message: string) => {
-    const n = integerField(form[key] as string, min);
+  const int = (key: keyof PreferenceForm, min: number, message: string, max?: number) => {
+    const n = integerField(form[key] as string, min, max);
     if (n === null) errors[key] = message;
     return n ?? 0;
   };
@@ -101,19 +128,36 @@ export function validatePreferenceForm(form: PreferenceForm): PreferenceFormResu
     theme: form.theme,
     highlightColor: form.highlightColor.toLowerCase(),
     showStatusBar: form.showStatusBar,
+    nowLineColor: form.nowLineColor.toLowerCase(),
+    nowLineStyle: form.nowLineStyle,
+    liveTrackColor: form.liveTrackColor.toLowerCase(),
+    liveTrackEnabled: form.liveTrackEnabled,
+    liveTrackOffsetSeconds: int(
+      "liveTrackOffsetSeconds",
+      Number.NEGATIVE_INFINITY,
+      "Must be a whole number of seconds, 0 or less.",
+      0,
+    ),
+    recenterResumeSeconds: int(
+      "recenterResumeSeconds",
+      0,
+      "Must be a whole number of seconds (0 = never).",
+    ),
   };
-  if (!/^#[0-9a-f]{6}$/.test(prefs.highlightColor)) {
-    errors.highlightColor = "Must be a color like #eaff00.";
+  for (const key of ["highlightColor", "nowLineColor", "liveTrackColor"] as const) {
+    if (!HEX.test(prefs[key])) errors[key] = "Must be a color like #eaff00.";
   }
   return Object.keys(errors).length === 0 ? { ok: true, prefs } : { ok: false, errors };
 }
 
 /** Loads the saved preferences into this window and applies the effects
- * that live outside React state (highlight window atom, --hl-color). */
+ * that live outside React state (highlight window and live-mark atoms, and
+ * the highlight, now-line and live-track color tokens). */
 export function usePreferences(): AppPreferencesSummary {
   const prefs = useAtomValue(preferencesAtom);
   const setPrefs = useSetAtom(preferencesAtom);
   const setWindowMs = useSetAtom(windowMsAtom);
+  const setLiveOptions = useSetAtom(liveOptionsAtom);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,8 +178,17 @@ export function usePreferences(): AppPreferencesSummary {
   useEffect(() => {
     const effects = preferenceEffects(prefs);
     setWindowMs(effects.highlightWindowMs);
-    document.documentElement.style.setProperty("--hl-color", effects.highlightColor);
-  }, [prefs, setWindowMs]);
+    setLiveOptions({
+      nowLineStyle: effects.nowLineStyle,
+      liveTrackEnabled: effects.liveTrackEnabled,
+      liveTrackOffsetMs: effects.liveTrackOffsetMs,
+      recenterResumeMs: effects.recenterResumeMs,
+    });
+    const root = document.documentElement.style;
+    root.setProperty("--hl-color", effects.highlightColor);
+    root.setProperty("--now-line-color", effects.nowLineColor);
+    root.setProperty("--live-track-color", effects.liveTrackColor);
+  }, [prefs, setWindowMs, setLiveOptions]);
 
   return prefs;
 }

@@ -6,6 +6,7 @@ import { LogPanel } from "./correlate/LogPanel.js";
 import { REFETCH_DEBOUNCE_MS } from "./correlate/liveView.js";
 import { epochMsToIso, toLogRows } from "./correlate/recordMapping.js";
 import { SeriesCharts, useSeriesPalette } from "./correlate/SeriesCharts.js";
+import { useNowTick } from "./correlate/useNowTick.js";
 import { useSyncedSeries } from "./correlate/useSyncedSeries.js";
 import { useSyncedView } from "./correlate/useSyncedView.js";
 import type { SumpRecord } from "./correlator-api.js";
@@ -25,6 +26,8 @@ export interface DetachedPanelProps {
 export function DetachedPanel({ kind, sumpId }: DetachedPanelProps) {
   useSyncedView();
   useSyncedSeries();
+  // cor-CORE.CORRELATE-000011: this window draws the live marks too.
+  useNowTick();
   const view = useAtomValue(viewAtom);
   const [records, setRecords] = useState<SumpRecord[]>([]);
   const { queryLimit } = preferenceEffects(useAtomValue(preferencesAtom));

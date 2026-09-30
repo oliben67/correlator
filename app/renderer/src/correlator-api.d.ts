@@ -301,6 +301,12 @@ export interface AppPreferencesSummary {
   notificationClearSeconds: number;
   highlightColor: string;
   showStatusBar: boolean;
+  nowLineColor: string;
+  nowLineStyle: "dotted" | "dashed" | "solid";
+  liveTrackColor: string;
+  liveTrackEnabled: boolean;
+  liveTrackOffsetSeconds: number;
+  recenterResumeSeconds: number;
 }
 
 export interface AppVersionInfo {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dragBand, dragMode, resolveRelease, resolveWheel } from "../gestures.js";
-import { LatestRequest, loadWindow } from "../liveView.js";
+import { LatestRequest, liveTrackTime, loadWindow } from "../liveView.js";
 import {
   isClick,
   MAX_SPAN_MS,
@@ -134,8 +134,8 @@ describe("cor-CORE.EXPORT-000003: capture drags", () => {
 });
 
 describe("cor-CORE.CORRELATE-000009: live model", () => {
-  it("live ends the window at now and keeps the span; paused keeps the view", () => {
-    expect(loadWindow({ t0: 0, t1: 10_000 }, true, 100_000)).toEqual({ t0: 90_000, t1: 100_000 });
+  it("live puts now at 95% of the span and keeps the span; paused keeps the view", () => {
+    expect(loadWindow({ t0: 0, t1: 10_000 }, true, 100_000)).toEqual({ t0: 90_500, t1: 100_500 });
     expect(loadWindow({ t0: 0, t1: 10_000 }, false, 100_000)).toEqual({ t0: 0, t1: 10_000 });
   });
 
@@ -145,5 +145,19 @@ describe("cor-CORE.CORRELATE-000009: live model", () => {
     const second = requests.next();
     expect(requests.isLatest(first)).toBe(false);
     expect(requests.isLatest(second)).toBe(true);
+  });
+});
+
+describe("cor-CORE.CORRELATE-000011: live-track marker", () => {
+  const on = { liveTrackEnabled: true, liveTrackOffsetMs: -2_000 };
+
+  it("sits at now + offset while live and enabled", () => {
+    expect(liveTrackTime(10_000, true, on)).toBe(8_000);
+  });
+
+  it("isn't drawn while paused, disabled, or without a tick", () => {
+    expect(liveTrackTime(10_000, false, on)).toBeNull();
+    expect(liveTrackTime(10_000, true, { ...on, liveTrackEnabled: false })).toBeNull();
+    expect(liveTrackTime(null, true, on)).toBeNull();
   });
 });

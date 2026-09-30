@@ -36,6 +36,7 @@
   --series-8: #e34948;
   --hl-color: #eaff00;
   --live-track-color: #22c55e;
+  --now-line-color: #14b8a6;
   --radius-sm: 5px;
   --radius-md: 7px;
   --radius-lg: 10px;
@@ -75,6 +76,7 @@ body {
     --series-8: #e66767;
     --hl-color: #eaff00;
     --live-track-color: #22c55e;
+    --now-line-color: #14b8a6;
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
   }

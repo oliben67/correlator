@@ -9,7 +9,14 @@
  */
 
 import type { createStore } from "jotai/vanilla";
-import { cursorTAtom, liveAtom, type Viewport, viewAtom } from "./atoms.js";
+import {
+  cursorTAtom,
+  liveAtom,
+  liveOptionsAtom,
+  resumeAtAtom,
+  type Viewport,
+  viewAtom,
+} from "./atoms.js";
 
 // jotai/vanilla's Store type isn't re-exported from its public barrel
 // (only createStore/getDefaultStore are) -- derive it from createStore's
@@ -26,21 +33,36 @@ export function setCursor(store: Store, t: number): void {
  * so `t` is centered, and set the cursor to `t` too -- cttc's "click a
  * log line -> the chart recenters/highlights on that timestamp."
  */
-export function recenterOn(store: Store, t: number): void {
+export function recenterOn(store: Store, t: number, nowMs: number = Date.now()): void {
   const { t0, t1 } = store.get(viewAtom);
   const span = t1 - t0;
+  const wasLive = store.get(liveAtom);
   store.set(viewAtom, { t0: t - span / 2, t1: t + span / 2 });
   store.set(cursorTAtom, t);
   store.set(liveAtom, false);
+  // cor-CORE.CORRELATE-000011 §6: a recenter that interrupted live resumes it later.
+  const delay = store.get(liveOptionsAtom).recenterResumeMs;
+  if (wasLive && delay > 0) store.set(resumeAtAtom, nowMs + delay);
 }
 
-/** A zoom or pan gesture: move the view and pause live follow. */
+/** A zoom or pan gesture: move the view and pause live follow, cancelling
+ * any pending resume. */
 export function zoomTo(store: Store, view: Viewport): void {
   store.set(viewAtom, view);
   store.set(liveAtom, false);
+  store.set(resumeAtAtom, null);
 }
 
-/** Follow now again; the next load moves the view (keeping its span). */
+/** Follow now again; the view reloads (keeping its span). */
 export function resumeLive(store: Store): void {
   store.set(liveAtom, true);
+  store.set(resumeAtAtom, null);
+}
+
+/** The tick's check: resume live once a pending resume is due. */
+export function checkResume(store: Store, nowMs: number): void {
+  const at = store.get(resumeAtAtom);
+  if (at === null || nowMs < at) return;
+  if (store.get(liveAtom)) store.set(resumeAtAtom, null);
+  else resumeLive(store);
 }

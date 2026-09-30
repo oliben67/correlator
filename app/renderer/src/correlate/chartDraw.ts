@@ -7,9 +7,10 @@
  * `gapLimitPx` of each other; an isolated point renders as a dot.
  * cor-CORE.CORRELATE-000010: an optional left gutter with value labels,
  * 50%/100% gridlines, and an optional time axis below the plot.
+ * cor-CORE.CORRELATE-000011: the now line and the live-track marker.
  */
 
-import type { Viewport } from "./atoms.js";
+import type { NowLineStyle, Viewport } from "./atoms.js";
 import { formatTick, formatValue, tickStep, timeTicks } from "./axes.js";
 import { tToX } from "./timeMapping.js";
 
@@ -34,6 +35,7 @@ export interface CanvasLike {
   strokeStyle?: unknown;
   fillStyle?: unknown;
   font?: string;
+  lineWidth?: number;
   textAlign?: CanvasTextAlign;
   textBaseline?: CanvasTextBaseline;
 }
@@ -72,7 +74,23 @@ export interface DrawChartStripOptions {
   maxValue?: number;
   /** Cursor line color; omitted = the context's current style. */
   cursorColor?: string;
+  /** cor-CORE.CORRELATE-000011: the now line, drawn when in view. */
+  nowT?: number | null;
+  nowLineColor?: string;
+  nowLineStyle?: NowLineStyle;
+  /** The live-track marker, drawn when in view. */
+  liveTrackT?: number | null;
+  liveTrackColor?: string;
 }
+
+/** Dash pattern per now-line style (cttc's). */
+export const NOW_LINE_DASH: Record<NowLineStyle, number[]> = {
+  dotted: [2, 4],
+  dashed: [8, 5],
+  solid: [],
+};
+const MARK_WIDTH = 1.5;
+const LIVE_TRACK_CAP_PX = 6;
 
 const DEFAULT_GAP_LIMIT_PX = 40;
 const DOT_RADIUS = 2;
@@ -215,6 +233,36 @@ export function drawChartStrip(ctx: CanvasLike, options: DrawChartStripOptions):
   }
 
   if (axisHeight > 0) drawTimeAxis(ctx, options, area);
+
+  const inView = (t: number | null | undefined): t is number =>
+    t !== null && t !== undefined && t >= view.t0 && t <= view.t1;
+  const baseWidth = ctx.lineWidth;
+  if (inView(options.nowT)) {
+    if (options.nowLineColor !== undefined) ctx.strokeStyle = options.nowLineColor;
+    ctx.lineWidth = MARK_WIDTH;
+    ctx.setLineDash(NOW_LINE_DASH[options.nowLineStyle ?? "dotted"]);
+    const x = xOf(options.nowT);
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, area.height);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  if (inView(options.liveTrackT)) {
+    if (options.liveTrackColor !== undefined) ctx.strokeStyle = options.liveTrackColor;
+    const x = xOf(options.liveTrackT);
+    ctx.lineWidth = MARK_WIDTH;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, area.height);
+    ctx.stroke();
+    ctx.lineWidth = LIVE_TRACK_CAP_PX;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, LIVE_TRACK_CAP_PX);
+    ctx.stroke();
+  }
+  ctx.lineWidth = baseWidth;
 
   if (cursorT !== null && cursorT >= view.t0 && cursorT <= view.t1) {
     if (options.cursorColor !== undefined) ctx.strokeStyle = options.cursorColor;

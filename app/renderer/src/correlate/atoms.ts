@@ -18,6 +18,31 @@ export const cursorTAtom = atom<number | null>(null);
  * zoom, pan or recenter pauses it. Shared across windows. */
 export const liveAtom = atom(true);
 
+/** cor-CORE.CORRELATE-000011: "now", advanced every second by a live view's
+ * tick (`useNowTick`); null where no live view is mounted. */
+export const nowAtom = atom<number | null>(null);
+
+/** When a recenter that paused live follow resumes it; null = none pending. */
+export const resumeAtAtom = atom<number | null>(null);
+
+export type NowLineStyle = "dotted" | "dashed" | "solid";
+
+/** The live-mark preferences (cor-CORE.SHELL-000008), applied by usePreferences. */
+export interface LiveOptions {
+  nowLineStyle: NowLineStyle;
+  liveTrackEnabled: boolean;
+  liveTrackOffsetMs: number;
+  /** 0 = a recenter never resumes live. */
+  recenterResumeMs: number;
+}
+
+export const liveOptionsAtom = atom<LiveOptions>({
+  nowLineStyle: "dotted",
+  liveTrackEnabled: true,
+  liveTrackOffsetMs: 0,
+  recenterResumeMs: 10_000,
+});
+
 /** ± tolerance (ms) for "this row is highlighted by the current cursor". */
 export const windowMsAtom = atom<number>(5000);
 
