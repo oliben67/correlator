@@ -174,4 +174,12 @@ describe("cor-CORE.CORRELATE-000008: host telemetry group", () => {
     expect(markup).toContain('aria-expanded="false"');
     expect(markup).not.toContain("data-host-strip=");
   });
+
+  it("cor-CORE.CORRELATE-000010: each group's last strip carries the time axis", () => {
+    const markup = withStore(
+      createElement(SeriesCharts, { records: [...records, hostMetric(80, 60)] }),
+    );
+    const axes = [...markup.matchAll(/aria-label="([^"]+)" data-time-axis=""/g)].map((m) => m[1]);
+    expect(axes).toEqual(["Memory %", "Host Memory %"]);
+  });
 });

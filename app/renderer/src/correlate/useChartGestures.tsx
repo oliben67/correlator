@@ -9,13 +9,17 @@
 import { useStore } from "jotai/react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { viewAtom } from "./atoms.js";
+import { PLOT_MARGIN_LEFT } from "./axes.js";
 import { recenterOn, setCursor, zoomTo } from "./correlate.js";
 import { type Drag, dragBand, resolveRelease, resolveWheel } from "./gestures.js";
 import { xToT } from "./timeMapping.js";
 
+/** The pointer's x within the plot area, right of the shared gutter
+ * (cor-CORE.CORRELATE-000010), and that area's width. */
 function localX(canvas: HTMLCanvasElement, clientX: number): { x: number; width: number } {
   const rect = canvas.getBoundingClientRect();
-  return { x: Math.min(rect.width, Math.max(0, clientX - rect.left)), width: rect.width };
+  const width = Math.max(1, rect.width - PLOT_MARGIN_LEFT);
+  return { x: Math.min(width, Math.max(0, clientX - rect.left - PLOT_MARGIN_LEFT)), width };
 }
 
 export interface ChartGestures {
@@ -101,7 +105,7 @@ export function useChartGestures(canvasRef: RefObject<HTMLCanvasElement | null>)
         position: "absolute",
         top: 0,
         bottom: 0,
-        left: rect.left,
+        left: PLOT_MARGIN_LEFT + rect.left,
         width: rect.width,
         background: "var(--accent)",
         opacity: 0.15,

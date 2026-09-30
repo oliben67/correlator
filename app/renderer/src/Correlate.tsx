@@ -14,6 +14,7 @@ import {
   interruptionPoint,
   type ResumeFrom,
 } from "./components/InterruptedSessionNotice.js";
+import { ModeBadge } from "./components/ModeBadge.js";
 import { cursorTAtom, liveAtom, viewAtom } from "./correlate/atoms.js";
 import { resumeLive } from "./correlate/correlate.js";
 import { EventDensityLane } from "./correlate/EventDensityLane.js";
@@ -376,6 +377,7 @@ export function Correlate({
       ))}
 
       <div style={{ display: "flex", gap: "12px", alignItems: "center", marginBottom: "12px" }}>
+        <ModeBadge mode={live ? "live" : "paused"} />
         <button type="button" onClick={() => load()}>
           Refresh
         </button>

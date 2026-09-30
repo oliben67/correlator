@@ -126,7 +126,7 @@ function HostGroup({ records }: { records: SumpRecord[] }) {
         {collapsed ? "▸" : "▾"} Host telemetry — {allHosts.join(", ")}
       </button>
       {!collapsed &&
-        strips.map((strip) => (
+        strips.map((strip, i) => (
           <div
             key={strip.field}
             data-host-strip={strip.field}
@@ -138,6 +138,8 @@ function HostGroup({ records }: { records: SumpRecord[] }) {
               minValue={0}
               maxValue={strip.maxValue}
               label={`Host ${strip.label}`}
+              unit="%"
+              timeAxis={i === strips.length - 1}
             />
           </div>
         ))}
@@ -168,10 +170,18 @@ export function SeriesCharts({ records }: SeriesChartsProps) {
     <div>
       <div style={{ fontWeight: 600 }}>Telemetry</div>
       <Legend entries={entries} onToggle={palette.toggle} onReorder={palette.move} />
-      {strips.map((strip) => (
+      {/* cor-CORE.CORRELATE-000010: the time axis goes on each group's last strip. */}
+      {strips.map((strip, i) => (
         <div key={strip.field} data-strip={strip.field} data-series-count={strip.series.length}>
           <div style={{ fontSize: "0.8em", color: "var(--muted)" }}>{strip.label}</div>
-          <Chart series={strip.series} minValue={0} maxValue={strip.maxValue} label={strip.label} />
+          <Chart
+            series={strip.series}
+            minValue={0}
+            maxValue={strip.maxValue}
+            label={strip.label}
+            unit="%"
+            timeAxis={i === strips.length - 1}
+          />
         </div>
       ))}
       <HostGroup records={records} />

@@ -9,6 +9,7 @@
 import { useAtomValue } from "jotai/react";
 import { useEffect, useRef } from "react";
 import { viewAtom } from "./atoms.js";
+import { PLOT_MARGIN_LEFT } from "./axes.js";
 import { bucketize } from "./densityBuckets.js";
 import { useChartGestures } from "./useChartGestures.js";
 
@@ -31,13 +32,15 @@ export function EventDensityLane({
     const canvas = canvasRef.current;
     if (!canvas) return;
     const dpr = window.devicePixelRatio || 1;
-    const plotWidth = canvas.clientWidth;
-    canvas.width = plotWidth * dpr;
+    const canvasWidth = canvas.clientWidth;
+    // cor-CORE.CORRELATE-000010: same gutter as the strips, so times line up.
+    const plotWidth = Math.max(1, canvasWidth - PLOT_MARGIN_LEFT);
+    canvas.width = canvasWidth * dpr;
     canvas.height = height * dpr;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, plotWidth, height);
+    ctx.clearRect(0, 0, canvasWidth, height);
 
     const bucketCount = Math.max(1, Math.round(plotWidth));
     const counts = bucketize(recordTimestamps, view, bucketCount);
@@ -47,7 +50,12 @@ export function EventDensityLane({
     for (let b = 0; b < bucketCount; b++) {
       if (!counts[b]) continue;
       ctx.globalAlpha = 0.35 + 0.65 * (counts[b] / maxCount);
-      ctx.fillRect(b * bucketWidth, 1, Math.max(1, bucketWidth - 0.5), height - 2);
+      ctx.fillRect(
+        PLOT_MARGIN_LEFT + b * bucketWidth,
+        1,
+        Math.max(1, bucketWidth - 0.5),
+        height - 2,
+      );
     }
     ctx.globalAlpha = 1;
   }, [view, recordTimestamps, height]);

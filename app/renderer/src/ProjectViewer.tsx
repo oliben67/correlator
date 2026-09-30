@@ -1,5 +1,6 @@
 import { type CSSProperties, useEffect, useState } from "react";
 import { Button } from "./components/Button.js";
+import { ModeBadge } from "./components/ModeBadge.js";
 import { Panel } from "./components/Panel.js";
 import { Chart } from "./correlate/Chart.js";
 import { LogPanel } from "./correlate/LogPanel.js";
@@ -83,7 +84,9 @@ export function ProjectViewer({ project, archives, onToggle, onDelay, onFit }: P
   return (
     <Panel>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <h3 style={{ margin: 0 }}>View</h3>
+        <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+          View <ModeBadge mode="analysis" />
+        </h3>
         <Button onClick={onFit}>Fit</Button>
       </div>
       <ul style={{ listStyle: "none", margin: "8px 0", padding: 0 }}>
@@ -119,10 +122,10 @@ export function ProjectViewer({ project, archives, onToggle, onDelay, onFit }: P
           );
         })}
       </ul>
-      {strips.map((strip) => (
+      {strips.map((strip, i) => (
         <div key={strip.path} data-strip={strip.path} style={{ marginTop: 8 }}>
           <div style={{ fontSize: "0.85em", color: "var(--muted)" }}>{strip.label}</div>
-          <Chart points={strip.points} />
+          <Chart points={strip.points} label={strip.label} timeAxis={i === strips.length - 1} />
         </div>
       ))}
       {logRows.length > 0 && (

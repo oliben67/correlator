@@ -166,6 +166,12 @@ describe("cor-CORE.PROJECT-000008: ProjectViewer", () => {
     expect(markup).toContain('data-logs="1"');
   });
 
+  it("cor-CORE.CORRELATE-000010: shows the Analysis badge and a time axis on the last strip", () => {
+    const markup = render(project());
+    expect(markup).toContain('data-view-mode="analysis"');
+    expect(markup).toMatch(/aria-label="cpu_pct · container" data-time-axis=""/);
+  });
+
   it("renders nothing for a project with no tracks or recordings", () => {
     expect(render(project({ references: ["/r/c.json"] }))).toBe("");
   });

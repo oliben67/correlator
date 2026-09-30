@@ -13,6 +13,10 @@ function fakeCtx(): CanvasLike & { calls: string[] } {
     stroke: vi.fn(() => calls.push("stroke")),
     arc: vi.fn((x: number, y: number) => calls.push(`arc(${x},${y})`)),
     fill: vi.fn(() => calls.push("fill")),
+    fillText: vi.fn((text: string, x: number, y: number) =>
+      calls.push(`fillText(${text},${x},${y})`),
+    ),
+    setLineDash: vi.fn((segments: number[]) => calls.push(`setLineDash(${segments.join(",")})`)),
   };
 }
 
@@ -178,5 +182,65 @@ describe("cor-CORE.CORRELATE-000007: multi-series drawChartStrip", () => {
       "lineTo(250,100)",
       "stroke",
     ]);
+  });
+});
+
+// cor-CORE.CORRELATE-000010 (REQ-000037): gutter, gridlines, time axis.
+describe("cor-CORE.CORRELATE-000010: axes in drawChartStrip", () => {
+  const base = { view, plotWidth: 540, height: 100, minValue: 0, maxValue: 100 };
+  const points = [
+    { t: 0, v: 0 },
+    { t: 5_000, v: 100 },
+  ];
+
+  it("maps time through the plot area right of the gutter", () => {
+    const ctx = fakeCtx();
+    drawChartStrip(ctx, { ...base, marginLeft: 40, cursorT: 50_000, points });
+    // Plot area is 500px wide starting at x = 40: t0 -> 40, 50 s -> 290.
+    expect(ctx.calls).toContain("moveTo(40,100)");
+    expect(ctx.calls).toContain("moveTo(290,0)");
+  });
+
+  it("draws dashed gridlines at 100% and 50%, and value labels with the unit", () => {
+    const ctx = fakeCtx();
+    drawChartStrip(ctx, { ...base, marginLeft: 40, cursorT: null, points, unit: "%" });
+    expect(ctx.calls.slice(1, 10)).toEqual([
+      "setLineDash(2,3)",
+      "beginPath",
+      "moveTo(40,0.5)",
+      "lineTo(540,0.5)",
+      "stroke",
+      "beginPath",
+      "moveTo(40,50)",
+      "lineTo(540,50)",
+      "stroke",
+    ]);
+    expect(ctx.calls).toContain("setLineDash()");
+    expect(ctx.calls).toContain("fillText(100%,36,0)");
+    expect(ctx.calls).toContain("fillText(50%,36,50)");
+    expect(ctx.calls).toContain("fillText(0%,36,100)");
+  });
+
+  it("draws no gridlines or labels without a gutter, or without data", () => {
+    const bare = fakeCtx();
+    drawChartStrip(bare, { ...base, cursorT: null, points });
+    expect(bare.calls.some((c) => c.startsWith("setLineDash") || c.startsWith("fillText"))).toBe(
+      false,
+    );
+    const empty = fakeCtx();
+    drawChartStrip(empty, { ...base, marginLeft: 40, cursorT: null, points: [] });
+    expect(empty.calls).toEqual(["clearRect(0,0,540,100)"]);
+  });
+
+  it("draws time ticks below the plot only when an axis height is given", () => {
+    const ctx = fakeCtx();
+    drawChartStrip(ctx, { ...base, marginLeft: 40, axisHeight: 16, cursorT: 50_000, points });
+    // The plot is 84px tall; ticks sit at y = 84 and the cursor stops there.
+    const labels = ctx.calls.filter((c) => c.startsWith("fillText") && c.endsWith(",87)"));
+    expect(labels.length).toBeGreaterThan(0);
+    expect(ctx.calls).toContain("lineTo(290,84)");
+    const noAxis = fakeCtx();
+    drawChartStrip(noAxis, { ...base, marginLeft: 40, cursorT: null, points });
+    expect(noAxis.calls.filter((c) => c.startsWith("fillText"))).toHaveLength(3);
   });
 });

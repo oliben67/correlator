@@ -25,3 +25,10 @@ describe("cor-CORE.CORRELATE-000009: Resume live", () => {
     expect(render(true)).not.toContain("Resume live");
   });
 });
+
+describe("cor-CORE.CORRELATE-000010: mode badge", () => {
+  it("says Live while following now and Paused otherwise", () => {
+    expect(render(true)).toMatch(/data-view-mode="live"[\s\S]*Live</);
+    expect(render(false)).toMatch(/data-view-mode="paused"[\s\S]*Paused</);
+  });
+});
