@@ -64,11 +64,12 @@ export function EventDensityLane({
     <div style={{ position: "relative" }}>
       <canvas
         ref={canvasRef}
-        style={{ width: "100%", height, display: "block" }}
+        style={{ width: "100%", height, display: "block", cursor: gestures.cursor }}
         onMouseDown={gestures.onMouseDown}
         onDoubleClick={gestures.onDoubleClick}
+        onContextMenu={gestures.onContextMenu}
       />
-      {gestures.band}
+      {gestures.overlay}
     </div>
   );
 }

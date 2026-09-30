@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dragBand, resolveRelease, resolveWheel } from "../gestures.js";
+import { dragBand, dragMode, resolveRelease, resolveWheel } from "../gestures.js";
 import { LatestRequest, loadWindow } from "../liveView.js";
 import {
   isClick,
@@ -54,14 +54,14 @@ describe("cor-CORE.CORRELATE-000009: zoom math", () => {
 
 describe("cor-CORE.CORRELATE-000009: gestures", () => {
   it("a release within 6 px sets the cursor at the release point", () => {
-    expect(resolveRelease({ x0: 100, x: 100 }, 103, view, width)).toEqual({
+    expect(resolveRelease({ x0: 100, x: 100, mode: "zoom" as const }, 103, view, width)).toEqual({
       type: "click",
       t: 10_300,
     });
   });
 
   it("a drag zooms to the dragged range, in either direction", () => {
-    expect(resolveRelease({ x0: 300, x: 100 }, 100, view, width)).toEqual({
+    expect(resolveRelease({ x0: 300, x: 100, mode: "zoom" as const }, 100, view, width)).toEqual({
       type: "zoom",
       view: { t0: 10_000, t1: 30_000 },
     });
@@ -70,13 +70,15 @@ describe("cor-CORE.CORRELATE-000009: gestures", () => {
   it("a drag shorter than 200 ms changes nothing", () => {
     // 1 ms per px: 7 px is a drag but only 7 ms.
     const narrow = { t0: 0, t1: 600 };
-    expect(resolveRelease({ x0: 100, x: 107 }, 107, narrow, width)).toEqual({ type: "none" });
+    expect(resolveRelease({ x0: 100, x: 107, mode: "zoom" as const }, 107, narrow, width)).toEqual({
+      type: "none",
+    });
   });
 
   it("the band covers the drag once it passes the click threshold", () => {
     expect(dragBand(null)).toBeNull();
-    expect(dragBand({ x0: 100, x: 103 })).toBeNull();
-    expect(dragBand({ x0: 300, x: 100 })).toEqual({ left: 100, width: 200 });
+    expect(dragBand({ x0: 100, x: 103, mode: "zoom" as const })).toBeNull();
+    expect(dragBand({ x0: 300, x: 100, mode: "zoom" as const })).toEqual({ left: 100, width: 200 });
   });
 
   it("a vertical wheel zooms around the pointer", () => {
@@ -99,6 +101,35 @@ describe("cor-CORE.CORRELATE-000009: gestures", () => {
 
   it("a zero wheel delta changes nothing", () => {
     expect(resolveWheel({ deltaX: 0, deltaY: 0, shiftKey: false }, 0, view, width)).toBeNull();
+  });
+});
+
+describe("cor-CORE.EXPORT-000003: capture drags", () => {
+  const none = { shiftKey: false, ctrlKey: false, metaKey: false };
+
+  it("a Shift, Ctrl or Cmd drag, or an armed drag, captures; a plain drag zooms", () => {
+    expect(dragMode(none, false, true)).toBe("zoom");
+    expect(dragMode({ ...none, shiftKey: true }, false, true)).toBe("capture");
+    expect(dragMode({ ...none, ctrlKey: true }, false, true)).toBe("capture");
+    expect(dragMode({ ...none, metaKey: true }, false, true)).toBe("capture");
+    expect(dragMode(none, true, true)).toBe("capture");
+  });
+
+  it("never captures where capture isn't available", () => {
+    expect(dragMode({ ...none, shiftKey: true }, true, false)).toBe("zoom");
+  });
+
+  it("a capture drag releases as a capture of the range, never a zoom", () => {
+    expect(resolveRelease({ x0: 100, x: 300, mode: "capture" }, 300, view, width)).toEqual({
+      type: "capture",
+      view: { t0: 10_000, t1: 30_000 },
+    });
+  });
+
+  it("a capture drag within the click threshold is still a click", () => {
+    expect(resolveRelease({ x0: 100, x: 100, mode: "capture" }, 102, view, width).type).toBe(
+      "click",
+    );
   });
 });
 

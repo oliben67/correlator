@@ -1,5 +1,5 @@
-import { useAtomValue, useSetAtom, useStore } from "jotai/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DetachPanelKind, DetachViewState } from "../../lib/detach.js";
 import {
   capturePointInTimeSnapshot,
@@ -15,7 +15,13 @@ import {
   type ResumeFrom,
 } from "./components/InterruptedSessionNotice.js";
 import { ModeBadge } from "./components/ModeBadge.js";
-import { cursorTAtom, liveAtom, viewAtom } from "./correlate/atoms.js";
+import { cursorTAtom, liveAtom, type Viewport, viewAtom } from "./correlate/atoms.js";
+import {
+  type ChartCapture,
+  ChartCaptureContext,
+  captureArmedAtom,
+  rangeCapture,
+} from "./correlate/chartCapture.js";
 import { resumeLive } from "./correlate/correlate.js";
 import { EventDensityLane } from "./correlate/EventDensityLane.js";
 import { LogPanel } from "./correlate/LogPanel.js";
@@ -73,6 +79,7 @@ export function Correlate({
   const setCursorT = useSetAtom(cursorTAtom);
   const cursorT = useAtomValue(cursorTAtom);
   const live = useAtomValue(liveAtom);
+  const [captureArmed, setCaptureArmed] = useAtom(captureArmedAtom);
   const store = useStore();
   const requests = useRef(new LatestRequest());
   // cor-CORE.SHELL-000008: fetch limit and auto-refresh come from preferences.
@@ -167,6 +174,7 @@ export function Correlate({
   useEffect(() => {
     setCursorT(null);
     store.set(liveAtom, true);
+    store.set(captureArmedAtom, false);
     setView(defaultWindow(Date.now()));
   }, [sumpId, store, setView, setCursorT]);
 
@@ -329,6 +337,25 @@ export function Correlate({
     setActiveSnapshot(snap);
   };
 
+  // cor-CORE.EXPORT-000003: capture straight from the chart.
+  const chartCapture = useMemo<ChartCapture>(
+    () => ({
+      onRangeSelect: (range: Viewport) => {
+        const captured = rangeCapture(records, sumpId, range);
+        setSnapStartIso(captured.startIso);
+        setSnapEndIso(captured.endIso);
+        setActiveSnapshot(captured.snapshot);
+        notify(`Captured ${captured.snapshot.records.length} records`);
+      },
+      onSnapshotAt: (t: number) => {
+        const snap = capturePointInTimeSnapshot(records, sumpId, t, 60000);
+        setActiveSnapshot(snap);
+        notify(`Captured ${snap.records.length} records around the clicked time`);
+      },
+    }),
+    [records, sumpId],
+  );
+
   const handleCopySnapshot = async () => {
     if (!activeSnapshot) return;
     const text =
@@ -393,6 +420,14 @@ export function Correlate({
             Resume live
           </button>
         )}
+        {captureArmed && (
+          <span role="status" data-capture-armed="">
+            Drag on the chart to capture a range (Esc cancels){" "}
+            <button type="button" onClick={() => setCaptureArmed(false)}>
+              Cancel
+            </button>
+          </span>
+        )}
 
         <span style={{ fontWeight: "bold" }}>
           Recording Session: {sessionStatus.toUpperCase()}
@@ -440,21 +475,28 @@ export function Correlate({
 
       {state.phase === "error" && <p role="alert">{state.message}</p>}
 
-      <EventDensityLane recordTimestamps={toEventTimestamps(records)} />
+      <ChartCaptureContext.Provider value={chartCapture}>
+        <EventDensityLane recordTimestamps={toEventTimestamps(records)} />
 
-      <div>
-        {onDetach && (
-          <button
-            type="button"
-            onClick={() => onDetach("chart", { sumpId, t0: view.t0, t1: view.t1, cursorT })}
-            title="Detach chart into its own window"
-            style={{ float: "right", background: "transparent", border: "none", cursor: "pointer" }}
-          >
-            ⧉
-          </button>
-        )}
-        {!chartDetached && <SeriesCharts records={records} />}
-      </div>
+        <div>
+          {onDetach && (
+            <button
+              type="button"
+              onClick={() => onDetach("chart", { sumpId, t0: view.t0, t1: view.t1, cursorT })}
+              title="Detach chart into its own window"
+              style={{
+                float: "right",
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              ⧉
+            </button>
+          )}
+          {!chartDetached && <SeriesCharts records={records} />}
+        </div>
+      </ChartCaptureContext.Provider>
 
       <div>
         {onDetach && (

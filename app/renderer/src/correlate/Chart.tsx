@@ -93,11 +93,12 @@ export function Chart({
         role="img"
         aria-label={label}
         data-time-axis={timeAxis ? "" : undefined}
-        style={{ width: "100%", height: fullHeight, display: "block" }}
+        style={{ width: "100%", height: fullHeight, display: "block", cursor: gestures.cursor }}
         onMouseDown={gestures.onMouseDown}
         onDoubleClick={gestures.onDoubleClick}
+        onContextMenu={gestures.onContextMenu}
       />
-      {gestures.band}
+      {gestures.overlay}
     </div>
   );
 }

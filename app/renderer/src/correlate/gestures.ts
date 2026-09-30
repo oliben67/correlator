@@ -1,28 +1,46 @@
 /**
  * Pure gesture resolution for chart strips and lanes
- * (cor-CORE.CORRELATE-000009 §1-§3). `useChartGestures` feeds pointer
- * events through these and applies the result to the store.
+ * (cor-CORE.CORRELATE-000009 §1-§3, capture drags cor-CORE.EXPORT-000003).
+ * `useChartGestures` feeds pointer events through these and applies the
+ * result.
  */
 
 import type { Viewport } from "./atoms.js";
 import { xToT } from "./timeMapping.js";
 import { isClick, panBy, rangeView, wheelFactor, zoomAround } from "./zoom.js";
 
+export type DragMode = "zoom" | "capture";
+
 export interface Drag {
   x0: number;
   x: number;
+  mode: DragMode;
+}
+
+export interface Modifiers {
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+}
+
+/** A drag captures when capture is available and it starts with Shift,
+ * Ctrl or Cmd held, or while capture is armed; otherwise it zooms. */
+export function dragMode(modifiers: Modifiers, armed: boolean, canCapture: boolean): DragMode {
+  if (!canCapture) return "zoom";
+  return armed || modifiers.shiftKey || modifiers.ctrlKey || modifiers.metaKey ? "capture" : "zoom";
 }
 
 export type Release =
   | { type: "none" }
   | { type: "click"; t: number }
-  | { type: "zoom"; view: Viewport };
+  | { type: "zoom"; view: Viewport }
+  | { type: "capture"; view: Viewport };
 
 /** What releasing `drag` at `x` does. */
 export function resolveRelease(drag: Drag, x: number, view: Viewport, plotWidth: number): Release {
   if (isClick(drag.x0, x)) return { type: "click", t: xToT(x, view, plotWidth) };
   const next = rangeView(xToT(drag.x0, view, plotWidth), xToT(x, view, plotWidth));
-  return next ? { type: "zoom", view: next } : { type: "none" };
+  return next ? { type: drag.mode, view: next } : { type: "none" };
 }
 
 export interface WheelInput {
