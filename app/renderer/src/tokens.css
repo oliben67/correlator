@@ -37,6 +37,7 @@
   --hl-color: #eaff00;
   --live-track-color: #22c55e;
   --now-line-color: #14b8a6;
+  --recording-band-color: #fab219;
   --radius-sm: 5px;
   --radius-md: 7px;
   --radius-lg: 10px;
@@ -77,6 +78,7 @@ body {
     --hl-color: #eaff00;
     --live-track-color: #22c55e;
     --now-line-color: #14b8a6;
+    --recording-band-color: #fab219;
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
   }
@@ -87,4 +89,19 @@ body {
    prop, since it isn't part of the element's own rendered box. */
 dialog::backdrop {
   background: rgba(0, 0, 0, 0.4);
+}
+
+/* cor-CORE.CORRELATE-000012: the recording dot's pulse (cttc's recording-pulse). */
+@keyframes recording-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.recording-dot[data-state="recording"] {
+  animation: recording-pulse 1.5s ease-in-out infinite;
 }

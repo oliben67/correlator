@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { NotificationHistory } from "./components/NotificationHistory.js";
+import { RecordingDot } from "./components/RecordingDot.js";
 import { SumpStatusPill } from "./components/SumpStatusPill.js";
 import type { SumpSummary } from "./correlator-api.d.ts";
 import {
@@ -76,6 +77,7 @@ export function StatusBar({
 
         {recordingStatus !== "idle" && (
           <span>
+            <RecordingDot status={recordingStatus} />
             Recording: <strong>{recordingStatus.toUpperCase()}</strong>
           </span>
         )}

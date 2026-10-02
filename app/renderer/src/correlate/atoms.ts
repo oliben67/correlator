@@ -36,6 +36,11 @@ export interface LiveOptions {
   recenterResumeMs: number;
 }
 
+/** cor-CORE.CORRELATE-000012: the Correlate view's captured ranges while its
+ * session records or is paused; `t1: null` is the open segment (up to now). */
+export const recordingBandsAtom = atom<{ t0: number; t1: number | null }[]>([]);
+export const sprocketHolesAtom = atom(true);
+
 export const liveOptionsAtom = atom<LiveOptions>({
   nowLineStyle: "dotted",
   liveTrackEnabled: true,

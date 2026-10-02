@@ -9,11 +9,20 @@
 
 import { useAtomValue } from "jotai/react";
 import { useEffect, useRef } from "react";
-import { cursorTAtom, liveAtom, liveOptionsAtom, nowAtom, viewAtom } from "./atoms.js";
+import {
+  cursorTAtom,
+  liveAtom,
+  liveOptionsAtom,
+  nowAtom,
+  recordingBandsAtom,
+  sprocketHolesAtom,
+  viewAtom,
+} from "./atoms.js";
 import { PLOT_MARGIN_LEFT, TIME_AXIS_HEIGHT } from "./axes.js";
 import { type ChartPoint, type ChartSeries, drawChartStrip } from "./chartDraw.js";
 import { resolveColor } from "./colorSlots.js";
 import { liveTrackTime } from "./liveView.js";
+import { resolveBands } from "./recordingBands.js";
 import { useChartGestures } from "./useChartGestures.js";
 
 export interface ChartProps {
@@ -32,6 +41,9 @@ export interface ChartProps {
   timeAxis?: boolean;
   /** Unit for the gutter's value labels. */
   unit?: string;
+  /** cor-CORE.CORRELATE-000012 §3: which band edges get sprocket holes (the
+   * group's first strip: top; its last: bottom). */
+  sprocketEdges?: { top: boolean; bottom: boolean };
 }
 
 function readCssVar(name: string): string {
@@ -47,6 +59,7 @@ export function Chart({
   label,
   timeAxis = false,
   unit,
+  sprocketEdges,
 }: ChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const view = useAtomValue(viewAtom);
@@ -58,6 +71,10 @@ export function Chart({
   const liveOptions = useAtomValue(liveOptionsAtom);
   const liveTrackT = liveTrackTime(nowT, live, liveOptions);
   const { nowLineStyle } = liveOptions;
+  const rawBands = useAtomValue(recordingBandsAtom);
+  const sprocketsOn = useAtomValue(sprocketHolesAtom);
+  const sprocketTop = sprocketEdges?.top ?? false;
+  const sprocketBottom = sprocketEdges?.bottom ?? false;
 
   const axisHeight = timeAxis ? TIME_AXIS_HEIGHT : 0;
   const fullHeight = height + axisHeight;
@@ -95,6 +112,9 @@ export function Chart({
       nowLineColor: resolveColor("var(--now-line-color)", readCssVar),
       liveTrackT,
       liveTrackColor: resolveColor("var(--live-track-color)", readCssVar),
+      bands: resolveBands(rawBands, nowT ?? Date.now()),
+      bandColor: resolveColor("var(--recording-band-color)", readCssVar),
+      sprockets: sprocketsOn ? { top: sprocketTop, bottom: sprocketBottom } : undefined,
     });
   }, [
     view,
@@ -109,6 +129,10 @@ export function Chart({
     nowT,
     nowLineStyle,
     liveTrackT,
+    rawBands,
+    sprocketsOn,
+    sprocketTop,
+    sprocketBottom,
   ]);
 
   return (

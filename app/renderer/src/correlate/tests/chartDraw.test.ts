@@ -17,6 +17,8 @@ function fakeCtx(): CanvasLike & { calls: string[] } {
       calls.push(`fillText(${text},${x},${y})`),
     ),
     setLineDash: vi.fn((segments: number[]) => calls.push(`setLineDash(${segments.join(",")})`)),
+    fillRect: vi.fn((...args: number[]) => calls.push(`fillRect(${args.join(",")})`)),
+    roundRect: vi.fn((...args: number[]) => calls.push(`roundRect(${args.join(",")})`)),
   };
 }
 
@@ -286,5 +288,68 @@ describe("cor-CORE.CORRELATE-000011: live marks in drawChartStrip", () => {
     const ctx = fakeCtx();
     drawChartStrip(ctx, { ...base, nowT: 150_000, liveTrackT: null });
     expect(ctx.calls).toEqual(["clearRect(0,0,500,100)"]);
+  });
+});
+
+// cor-CORE.CORRELATE-000012 (REQ-000040): the recording band.
+describe("cor-CORE.CORRELATE-000012: recording band", () => {
+  // 100 s over 500 px = 5 px per second.
+  const base = { view, plotWidth, height, cursorT: null, points: [] };
+
+  it("shades each band, clipped to the view, before anything else", () => {
+    const ctx = fakeCtx();
+    drawChartStrip(ctx, {
+      ...base,
+      bands: [
+        { t0: 10_000, t1: 20_000 },
+        { t0: 90_000, t1: 150_000 },
+      ],
+    });
+    expect(ctx.calls).toEqual([
+      "clearRect(0,0,500,100)",
+      "fillRect(50,0,50,100)",
+      "fillRect(450,0,50,100)",
+    ]);
+  });
+
+  it("draws nothing for a band outside the view", () => {
+    const ctx = fakeCtx();
+    drawChartStrip(ctx, { ...base, bands: [{ t0: 200_000, t1: 300_000 }] });
+    expect(ctx.calls).toEqual(["clearRect(0,0,500,100)"]);
+  });
+
+  it("punches sprocket holes along the asked edges, every 22 px, and frame lines every third", () => {
+    const ctx = fakeCtx();
+    // 0..20 s = 0..100 px: holes at 3.5, 25.5, 47.5, 69.5 (the next would overrun).
+    drawChartStrip(ctx, {
+      ...base,
+      bands: [{ t0: 0, t1: 20_000 }],
+      sprockets: { top: true, bottom: false },
+    });
+    const holes = ctx.calls.filter((c) => c.startsWith("roundRect"));
+    expect(holes).toEqual([
+      "roundRect(3.5,2.5,15,9,3)",
+      "roundRect(25.5,2.5,15,9,3)",
+      "roundRect(47.5,2.5,15,9,3)",
+      "roundRect(69.5,2.5,15,9,3)",
+    ]);
+    // One frame line, in the gap after the third hole.
+    expect(ctx.calls.filter((c) => c.startsWith("moveTo"))).toEqual(["moveTo(66,0)"]);
+  });
+
+  it("puts holes on the bottom edge of a group's last strip, and none without sprockets", () => {
+    const ctx = fakeCtx();
+    drawChartStrip(ctx, {
+      ...base,
+      bands: [{ t0: 0, t1: 10_000 }],
+      sprockets: { top: false, bottom: true },
+    });
+    expect(ctx.calls.filter((c) => c.startsWith("roundRect"))).toEqual([
+      "roundRect(3.5,88.5,15,9,3)",
+      "roundRect(25.5,88.5,15,9,3)",
+    ]);
+    const bare = fakeCtx();
+    drawChartStrip(bare, { ...base, bands: [{ t0: 0, t1: 10_000 }] });
+    expect(bare.calls.some((c) => c.startsWith("roundRect"))).toBe(false);
   });
 });

@@ -26,6 +26,8 @@ describe("cor-CORE.SHELL-000008: preferenceEffects", () => {
       liveTrackEnabled: true,
       liveTrackOffsetMs: 0,
       recenterResumeMs: 10_000,
+      recordingBandColor: "#fab219",
+      recordingSprocketHoles: true,
     });
   });
 
@@ -130,6 +132,8 @@ describe("cor-CORE.SHELL-000008: PreferencesForm", () => {
       "liveTrackEnabled",
       "liveTrackOffsetSeconds",
       "recenterResumeSeconds",
+      "recordingBandColor",
+      "recordingSprocketHoles",
     ]) {
       expect(markup).toContain(`name="${name}"`);
     }
@@ -139,7 +143,7 @@ describe("cor-CORE.SHELL-000008: PreferencesForm", () => {
 
   it("offers no field for features correlator doesn't have yet", () => {
     const markup = render().toLowerCase();
-    for (const absent of ["capture band", "sprocket", "autostart", "own logs"]) {
+    for (const absent of ["capture band", "autostart", "own logs"]) {
       expect(markup).not.toContain(absent);
     }
   });

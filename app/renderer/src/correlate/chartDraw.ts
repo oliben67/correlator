@@ -8,6 +8,7 @@
  * cor-CORE.CORRELATE-000010: an optional left gutter with value labels,
  * 50%/100% gridlines, and an optional time axis below the plot.
  * cor-CORE.CORRELATE-000011: the now line and the live-track marker.
+ * cor-CORE.CORRELATE-000012: the recording band, under everything else.
  */
 
 import type { NowLineStyle, Viewport } from "./atoms.js";
@@ -32,6 +33,10 @@ export interface CanvasLike {
   fill(): void;
   fillText(text: string, x: number, y: number): void;
   setLineDash(segments: number[]): void;
+  fillRect(x: number, y: number, w: number, h: number): void;
+  roundRect(x: number, y: number, w: number, h: number, radius: number): void;
+  globalAlpha?: number;
+  globalCompositeOperation?: GlobalCompositeOperation;
   strokeStyle?: unknown;
   fillStyle?: unknown;
   font?: string;
@@ -81,6 +86,75 @@ export interface DrawChartStripOptions {
   /** The live-track marker, drawn when in view. */
   liveTrackT?: number | null;
   liveTrackColor?: string;
+  /** cor-CORE.CORRELATE-000012: captured ranges to shade. */
+  bands?: readonly { t0: number; t1: number }[];
+  bandColor?: string;
+  /** Sprocket holes along the band: which edges get holes (frame lines are
+   * drawn either way). Omitted = no holes and no frame lines. */
+  sprockets?: { top: boolean; bottom: boolean };
+}
+
+const BAND_ALPHA = 0.15;
+const HOLE_W = 15;
+const HOLE_H = 9;
+const HOLE_RADIUS = 3;
+const HOLE_SPACING = 22;
+const HOLE_INSET = 7;
+const FRAME_ALPHA = 0.25;
+
+/** Shade each band; with `sprockets`, punch holes and draw frame lines. */
+export function drawBands(
+  ctx: CanvasLike,
+  bands: readonly { t0: number; t1: number }[],
+  view: Viewport,
+  area: { left: number; width: number; height: number },
+  color: string | undefined,
+  sprockets?: { top: boolean; bottom: boolean },
+): void {
+  const right = area.left + area.width;
+  const baseFill = ctx.fillStyle;
+  const baseStroke = ctx.strokeStyle;
+  const baseAlpha = ctx.globalAlpha;
+  if (color !== undefined) {
+    ctx.fillStyle = color;
+    ctx.strokeStyle = color;
+  }
+  for (const band of bands) {
+    const x0 = Math.max(area.left, area.left + tToX(band.t0, view, area.width));
+    const x1 = Math.min(right, area.left + tToX(band.t1, view, area.width));
+    if (x1 <= x0) continue;
+    ctx.globalAlpha = BAND_ALPHA;
+    ctx.fillRect(x0, 0, x1 - x0, area.height);
+    if (!sprockets) continue;
+    const holes: number[] = [];
+    for (let x = x0 + (HOLE_SPACING - HOLE_W) / 2; x + HOLE_W <= x1; x += HOLE_SPACING)
+      holes.push(x);
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = "destination-out";
+    const rows = [
+      ...(sprockets.top ? [HOLE_INSET - HOLE_H / 2] : []),
+      ...(sprockets.bottom ? [area.height - HOLE_INSET - HOLE_H / 2] : []),
+    ];
+    for (const y of rows) {
+      for (const x of holes) {
+        ctx.beginPath();
+        ctx.roundRect(x, y, HOLE_W, HOLE_H, HOLE_RADIUS);
+        ctx.fill();
+      }
+    }
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = FRAME_ALPHA;
+    for (let i = 2; i < holes.length - 1; i += 3) {
+      const x = holes[i] + HOLE_W + (HOLE_SPACING - HOLE_W) / 2;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, area.height);
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = baseAlpha;
+  ctx.fillStyle = baseFill;
+  ctx.strokeStyle = baseStroke;
 }
 
 /** Dash pattern per now-line style (cttc's). */
@@ -208,6 +282,10 @@ export function drawChartStrip(ctx: CanvasLike, options: DrawChartStripOptions):
   const xOf = (t: number) => left + tToX(t, view, area.width);
 
   ctx.clearRect(0, 0, plotWidth, height);
+
+  if (options.bands && options.bands.length > 0) {
+    drawBands(ctx, options.bands, view, area, options.bandColor, options.sprockets);
+  }
 
   const values = series.flatMap((s) => s.points.map((p) => p.v));
   if (values.length > 0) {

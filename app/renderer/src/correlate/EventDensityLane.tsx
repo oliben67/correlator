@@ -8,9 +8,12 @@
 
 import { useAtomValue } from "jotai/react";
 import { useEffect, useRef } from "react";
-import { viewAtom } from "./atoms.js";
+import { nowAtom, recordingBandsAtom, viewAtom } from "./atoms.js";
 import { PLOT_MARGIN_LEFT } from "./axes.js";
+import { drawBands } from "./chartDraw.js";
+import { resolveColor } from "./colorSlots.js";
 import { bucketize } from "./densityBuckets.js";
+import { resolveBands } from "./recordingBands.js";
 import { useChartGestures } from "./useChartGestures.js";
 
 export interface EventDensityLaneProps {
@@ -26,6 +29,9 @@ export function EventDensityLane({
 }: EventDensityLaneProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const view = useAtomValue(viewAtom);
+  // cor-CORE.CORRELATE-000012: the recording band (no sprocket holes on lanes).
+  const rawBands = useAtomValue(recordingBandsAtom);
+  const nowT = useAtomValue(nowAtom);
   const gestures = useChartGestures(canvasRef);
 
   useEffect(() => {
@@ -41,6 +47,16 @@ export function EventDensityLane({
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, canvasWidth, height);
+    const bandColor = resolveColor("var(--recording-band-color)", (name) =>
+      getComputedStyle(document.documentElement).getPropertyValue(name),
+    );
+    drawBands(
+      ctx,
+      resolveBands(rawBands, nowT ?? Date.now()),
+      view,
+      { left: PLOT_MARGIN_LEFT, width: plotWidth, height },
+      bandColor,
+    );
 
     const bucketCount = Math.max(1, Math.round(plotWidth));
     const counts = bucketize(recordTimestamps, view, bucketCount);
@@ -58,7 +74,7 @@ export function EventDensityLane({
       );
     }
     ctx.globalAlpha = 1;
-  }, [view, recordTimestamps, height]);
+  }, [view, recordTimestamps, height, rawBands, nowT]);
 
   return (
     <div style={{ position: "relative" }}>

@@ -140,6 +140,7 @@ function HostGroup({ records }: { records: SumpRecord[] }) {
               label={`Host ${strip.label}`}
               unit="%"
               timeAxis={i === strips.length - 1}
+              sprocketEdges={{ top: i === 0, bottom: i === strips.length - 1 }}
             />
           </div>
         ))}
@@ -181,6 +182,7 @@ export function SeriesCharts({ records }: SeriesChartsProps) {
             label={strip.label}
             unit="%"
             timeAxis={i === strips.length - 1}
+            sprocketEdges={{ top: i === 0, bottom: i === strips.length - 1 }}
           />
         </div>
       ))}

@@ -159,6 +159,28 @@ export function PreferencesForm({
             />
             {errors.liveTrackColor && <span style={errorStyle}>{errors.liveTrackColor}</span>}
           </label>
+          {/* cor-CORE.CORRELATE-000012 */}
+          <label style={fieldStyle}>
+            <span>Recording band color</span>
+            <input
+              type="color"
+              name="recordingBandColor"
+              value={form.recordingBandColor}
+              onChange={(e) => set("recordingBandColor", e.target.value)}
+            />
+            {errors.recordingBandColor && (
+              <span style={errorStyle}>{errors.recordingBandColor}</span>
+            )}
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              name="recordingSprocketHoles"
+              checked={form.recordingSprocketHoles}
+              onChange={(e) => set("recordingSprocketHoles", e.target.checked)}
+            />
+            <span>Sprocket holes on the recording band</span>
+          </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <input
               type="checkbox"

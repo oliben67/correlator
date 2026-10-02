@@ -15,7 +15,15 @@ import {
   type ResumeFrom,
 } from "./components/InterruptedSessionNotice.js";
 import { ModeBadge } from "./components/ModeBadge.js";
-import { cursorTAtom, liveAtom, resumeAtAtom, type Viewport, viewAtom } from "./correlate/atoms.js";
+import { RecordingDot } from "./components/RecordingDot.js";
+import {
+  cursorTAtom,
+  liveAtom,
+  recordingBandsAtom,
+  resumeAtAtom,
+  type Viewport,
+  viewAtom,
+} from "./correlate/atoms.js";
 import {
   type ChartCapture,
   ChartCaptureContext,
@@ -27,6 +35,7 @@ import { EventDensityLane } from "./correlate/EventDensityLane.js";
 import { LogPanel } from "./correlate/LogPanel.js";
 import { LatestRequest, loadWindow, REFETCH_DEBOUNCE_MS } from "./correlate/liveView.js";
 import { Navigator } from "./correlate/Navigator.js";
+import { recordingBands } from "./correlate/recordingBands.js";
 import {
   defaultWindow,
   epochMsToIso,
@@ -219,6 +228,12 @@ export function Correlate({
   useEffect(() => {
     onRecordingStatusChange?.({ sumpId: reportedSumpId, status: reportedStatus });
   }, [onRecordingStatusChange, reportedSumpId, reportedStatus]);
+
+  // cor-CORE.CORRELATE-000012 §2: band this Sump's captured ranges.
+  useEffect(() => {
+    store.set(recordingBandsAtom, recordingBands(session?.sumpId === sumpId ? session : null));
+  }, [session, sumpId, store]);
+  useEffect(() => () => store.set(recordingBandsAtom, []), [store]);
 
   const handleStartSession = async () => {
     try {
@@ -440,6 +455,7 @@ export function Correlate({
         )}
 
         <span style={{ fontWeight: "bold" }}>
+          <RecordingDot status={sessionStatus} />
           Recording Session: {sessionStatus.toUpperCase()}
           {session && session.segments.length > 0 && ` (${session.segments.length} segment(s))`}
         </span>

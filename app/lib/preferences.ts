@@ -31,6 +31,10 @@ export interface AppPreferences {
   liveTrackOffsetSeconds: number;
   /** Delay before a recenter that interrupted live resumes it; 0 = never. */
   recenterResumeSeconds: number;
+  /** cor-CORE.CORRELATE-000012: the captured-range band's color, `#rrggbb`. */
+  recordingBandColor: string;
+  /** Sprocket holes along the band on chart strips. */
+  recordingSprocketHoles: boolean;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -47,6 +51,8 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   liveTrackEnabled: true,
   liveTrackOffsetSeconds: 0,
   recenterResumeSeconds: 10,
+  recordingBandColor: "#fab219",
+  recordingSprocketHoles: true,
 };
 
 const PREF_KEY_PREFIX = "pref_";
@@ -112,6 +118,8 @@ const FIELDS: { [K in keyof AppPreferences]: FieldSpec<AppPreferences[K]> } = {
   liveTrackEnabled: boolean,
   liveTrackOffsetSeconds: integerAtMost(0),
   recenterResumeSeconds: integerAtLeast(0),
+  recordingBandColor: hexColor,
+  recordingSprocketHoles: boolean,
 };
 
 const FIELD_NAMES = Object.keys(FIELDS) as (keyof AppPreferences)[];

@@ -307,6 +307,8 @@ export interface AppPreferencesSummary {
   liveTrackEnabled: boolean;
   liveTrackOffsetSeconds: number;
   recenterResumeSeconds: number;
+  recordingBandColor: string;
+  recordingSprocketHoles: boolean;
 }
 
 export interface AppVersionInfo {

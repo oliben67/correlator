@@ -55,6 +55,13 @@ describe("cor-CORE.SHELL-000008: effective preferences", () => {
     });
   });
 
+  it("cor-CORE.CORRELATE-000012: defaults the recording-band fields per the rule", () => {
+    expect(DEFAULT_PREFERENCES).toMatchObject({
+      recordingBandColor: "#fab219",
+      recordingSprocketHoles: true,
+    });
+  });
+
   it("defaults the new fields per the rule", () => {
     expect(DEFAULT_PREFERENCES).toMatchObject({
       logHighlightWindowSeconds: 5,
@@ -80,6 +87,8 @@ describe("cor-CORE.SHELL-000008: effective preferences", () => {
       liveTrackEnabled: false,
       liveTrackOffsetSeconds: -5,
       recenterResumeSeconds: 0,
+      recordingBandColor: "#123456",
+      recordingSprocketHoles: false,
     };
     expect(savePreferences(catalog, all)).toEqual(all);
     expect(getPreferences(catalog)).toEqual(all);
@@ -121,6 +130,8 @@ describe("cor-CORE.SHELL-000008: effective preferences", () => {
     [{ liveTrackOffsetSeconds: 1 }],
     [{ liveTrackOffsetSeconds: -0.5 }],
     [{ recenterResumeSeconds: -1 }],
+    [{ recordingBandColor: "orange" }],
+    [{ recordingSprocketHoles: "no" }],
   ])("refuses to save %o and stores nothing", (update) => {
     const catalog = new Catalog(dbPath);
     expect(() =>

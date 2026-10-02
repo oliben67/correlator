@@ -2,7 +2,7 @@ import { atom } from "jotai";
 import { useAtomValue, useSetAtom } from "jotai/react";
 import { useEffect } from "react";
 import { DEFAULT_PREFERENCES } from "../../lib/preferences.js";
-import { liveOptionsAtom, windowMsAtom } from "./correlate/atoms.js";
+import { liveOptionsAtom, sprocketHolesAtom, windowMsAtom } from "./correlate/atoms.js";
 import type { AppPreferencesSummary } from "./correlator-api.js";
 
 // cor-CORE.SHELL-000008 (REQ-000030): every offered preference takes
@@ -33,6 +33,9 @@ export interface PreferenceEffects {
   liveTrackEnabled: boolean;
   liveTrackOffsetMs: number;
   recenterResumeMs: number;
+  /** cor-CORE.CORRELATE-000012: value for the recording band color token. */
+  recordingBandColor: string;
+  recordingSprocketHoles: boolean;
 }
 
 export function preferenceEffects(prefs: AppPreferencesSummary): PreferenceEffects {
@@ -50,6 +53,8 @@ export function preferenceEffects(prefs: AppPreferencesSummary): PreferenceEffec
     liveTrackEnabled: prefs.liveTrackEnabled,
     liveTrackOffsetMs: prefs.liveTrackOffsetSeconds * 1000,
     recenterResumeMs: prefs.recenterResumeSeconds * 1000,
+    recordingBandColor: prefs.recordingBandColor,
+    recordingSprocketHoles: prefs.recordingSprocketHoles,
   };
 }
 
@@ -68,6 +73,8 @@ export interface PreferenceForm {
   liveTrackEnabled: boolean;
   liveTrackOffsetSeconds: string;
   recenterResumeSeconds: string;
+  recordingBandColor: string;
+  recordingSprocketHoles: boolean;
 }
 
 export function toPreferenceForm(prefs: AppPreferencesSummary): PreferenceForm {
@@ -85,6 +92,8 @@ export function toPreferenceForm(prefs: AppPreferencesSummary): PreferenceForm {
     liveTrackEnabled: prefs.liveTrackEnabled,
     liveTrackOffsetSeconds: String(prefs.liveTrackOffsetSeconds),
     recenterResumeSeconds: String(prefs.recenterResumeSeconds),
+    recordingBandColor: prefs.recordingBandColor,
+    recordingSprocketHoles: prefs.recordingSprocketHoles,
   };
 }
 
@@ -143,21 +152,30 @@ export function validatePreferenceForm(form: PreferenceForm): PreferenceFormResu
       0,
       "Must be a whole number of seconds (0 = never).",
     ),
+    recordingBandColor: form.recordingBandColor.toLowerCase(),
+    recordingSprocketHoles: form.recordingSprocketHoles,
   };
-  for (const key of ["highlightColor", "nowLineColor", "liveTrackColor"] as const) {
+  for (const key of [
+    "highlightColor",
+    "nowLineColor",
+    "liveTrackColor",
+    "recordingBandColor",
+  ] as const) {
     if (!HEX.test(prefs[key])) errors[key] = "Must be a color like #eaff00.";
   }
   return Object.keys(errors).length === 0 ? { ok: true, prefs } : { ok: false, errors };
 }
 
 /** Loads the saved preferences into this window and applies the effects
- * that live outside React state (highlight window and live-mark atoms, and
- * the highlight, now-line and live-track color tokens). */
+ * that live outside React state (highlight window, live-mark and sprocket
+ * atoms, and the highlight, now-line, live-track and recording-band color
+ * tokens). */
 export function usePreferences(): AppPreferencesSummary {
   const prefs = useAtomValue(preferencesAtom);
   const setPrefs = useSetAtom(preferencesAtom);
   const setWindowMs = useSetAtom(windowMsAtom);
   const setLiveOptions = useSetAtom(liveOptionsAtom);
+  const setSprocketHoles = useSetAtom(sprocketHolesAtom);
 
   useEffect(() => {
     let cancelled = false;
@@ -188,7 +206,9 @@ export function usePreferences(): AppPreferencesSummary {
     root.setProperty("--hl-color", effects.highlightColor);
     root.setProperty("--now-line-color", effects.nowLineColor);
     root.setProperty("--live-track-color", effects.liveTrackColor);
-  }, [prefs, setWindowMs, setLiveOptions]);
+    root.setProperty("--recording-band-color", effects.recordingBandColor);
+    setSprocketHoles(effects.recordingSprocketHoles);
+  }, [prefs, setWindowMs, setLiveOptions, setSprocketHoles]);
 
   return prefs;
 }
