@@ -81,6 +81,9 @@ export interface TrackRow {
 export type EventConditionType = "metric" | "log";
 export type EventOperator = "gt" | "lt" | "eq" | "gte" | "lte";
 export type EventAction = "start_recording" | "stop_recording" | "notify";
+/** cor-CORE.EVENT-000003: who evaluates the rule -- the main process's
+ * watcher while the app runs ("app"), or the Correlate view's loads ("view"). */
+export type EventHosting = "app" | "view";
 
 export interface EventRuleRow {
   id: string;
@@ -94,6 +97,7 @@ export interface EventRuleRow {
   action: EventAction;
   enabled: boolean;
   createdAt: string;
+  hosting: EventHosting;
 }
 
 const SCHEMA = `
@@ -183,7 +187,8 @@ CREATE TABLE IF NOT EXISTS event_rules (
   pattern TEXT,
   action TEXT NOT NULL,
   enabled INTEGER NOT NULL DEFAULT 1,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  hosting TEXT NOT NULL DEFAULT 'view'
 );
 CREATE INDEX IF NOT EXISTS idx_event_rules_sump_id ON event_rules(sump_id);
 `;
@@ -292,6 +297,7 @@ function eventRuleFromRow(row: Record<string, unknown>): EventRuleRow {
     action: row.action as EventAction,
     enabled: Boolean(row.enabled),
     createdAt: row.created_at as string,
+    hosting: row.hosting === "app" ? "app" : "view",
   };
 }
 
@@ -316,6 +322,8 @@ export class Catalog {
     // migrate an existing database, not just a fresh one.
     ensureColumn(this.db, "sumps", "parent_sump_id", "parent_sump_id TEXT REFERENCES sumps(id)");
     ensureColumn(this.db, "sumps", "docker_host", "docker_host TEXT");
+    // cor-CORE.EVENT-000003: rules from before hosting existed are view-hosted.
+    ensureColumn(this.db, "event_rules", "hosting", "hosting TEXT NOT NULL DEFAULT 'view'");
   }
 
   close(): void {
@@ -713,8 +721,8 @@ export class Catalog {
   upsertEventRule(rule: EventRuleRow): void {
     this.db
       .prepare(`
-      INSERT INTO event_rules (id, sump_id, name, condition_type, metric_name, operator, threshold, pattern, action, enabled, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO event_rules (id, sump_id, name, condition_type, metric_name, operator, threshold, pattern, action, enabled, created_at, hosting)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         sump_id = excluded.sump_id,
         name = excluded.name,
@@ -738,12 +746,24 @@ export class Catalog {
         rule.action,
         rule.enabled ? 1 : 0,
         rule.createdAt,
+        rule.hosting,
       );
   }
 
   getEventRule(id: string): EventRuleRow | null {
     const row = this.db.prepare("SELECT * FROM event_rules WHERE id = ?").get(id);
     return row ? eventRuleFromRow(row as Record<string, unknown>) : null;
+  }
+
+  /** cor-CORE.EVENT-000003: every enabled app-hosted rule, for the watcher. */
+  listEnabledAppHostedRules(): EventRuleRow[] {
+    return (
+      this.db
+        .prepare(
+          "SELECT * FROM event_rules WHERE hosting = 'app' AND enabled = 1 ORDER BY created_at",
+        )
+        .all() as Record<string, unknown>[]
+    ).map(eventRuleFromRow);
   }
 
   listEventRulesForSump(sumpId: string): EventRuleRow[] {

@@ -63,8 +63,13 @@ if (!gotSingleInstanceLock) {
 }
 
 async function bootstrap() {
-  const { createWindow, registerIpcHandlers, registerAppLifecycle, classifyOpenedFile } =
-    await import("./shell.ts");
+  const {
+    createWindow,
+    registerIpcHandlers,
+    registerAppLifecycle,
+    classifyOpenedFile,
+    APP_RULE_INTERVAL_MS,
+  } = await import("./shell.ts");
   const { buildMenuTemplate } = await import("./lib/menu.ts");
   classifyOpenedFileRef = classifyOpenedFile;
 
@@ -93,6 +98,8 @@ async function bootstrap() {
         resourcesPath: process.resourcesPath,
         preloadPath,
         indexHtmlPath,
+        // cor-CORE.EVENT-000003: app-hosted event rules run while the app does.
+        appRuleIntervalMs: APP_RULE_INTERVAL_MS,
       },
     );
 

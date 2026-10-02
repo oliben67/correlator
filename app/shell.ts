@@ -20,6 +20,7 @@ import {
   Catalog,
   type EventAction,
   type EventConditionType,
+  type EventHosting,
   type EventOperator,
   type EventRuleRow,
   type RecordingSessionRow,
@@ -32,7 +33,13 @@ import {
   type DetachViewState,
   detachWindowSpec,
 } from "./lib/detach.ts";
-import { evaluateEventRules, type TelemetrySample } from "./lib/events.ts";
+import {
+  evaluateEventRules,
+  type RuleEvaluationResult,
+  risingEdges,
+  rulesHostedBy,
+  type TelemetrySample,
+} from "./lib/events.ts";
 import { transition } from "./lib/lifecycle.ts";
 import { installLocalSump, LOCAL_SUMP_ID, resolveServerResourcesDir } from "./lib/local-sump.ts";
 import {
@@ -492,12 +499,21 @@ export interface ProvisionIpcOptions {
   /** cor-CORE.PROJECT-000007: injected by tests; otherwise one is created
    * with the Electron dialog adapter. */
   projectSession?: ProjectSession;
+  /** cor-CORE.EVENT-000003: start the app-hosted rule watcher at this
+   * period (main.cjs passes APP_RULE_INTERVAL_MS); omitted = not started,
+   * so tests drive `pollAppHostedRules` themselves. */
+  appRuleIntervalMs?: number;
 }
+
+/** cor-CORE.EVENT-000003 §2: the app-hosted rule watcher's period. */
+export const APP_RULE_INTERVAL_MS = 10_000;
 
 export interface RegisteredIpc {
   /** main.cjs builds the File menu from it and routes OS-opened
    * `.correlator` files to it. */
   projectSession: ProjectSession;
+  /** cor-CORE.EVENT-000003: one pass of the app-hosted rule watcher. */
+  pollAppHostedRules: (nowMs?: number) => Promise<void>;
 }
 
 export async function registerIpcHandlers(
@@ -513,6 +529,7 @@ export async function registerIpcHandlers(
     spawnFn = spawn,
     preloadPath,
     indexHtmlPath,
+    appRuleIntervalMs,
   } = provisionOptions;
 
   // cor-CORE.PROJECT-000007: the one current project, and the two push
@@ -533,6 +550,34 @@ export async function registerIpcHandlers(
     session: projectSession,
     notify: notifyWindows,
     onExported: () => broadcast("project-changed"),
+  };
+
+  // cor-CORE.EVENT-000001 §3: what a triggered rule does, for either host.
+  const runRuleActions = async (
+    catalog: Catalog,
+    sumpId: string,
+    triggered: RuleEvaluationResult[],
+  ): Promise<void> => {
+    for (const res of triggered) {
+      if (res.action === "start_recording") {
+        startRecordingSession(catalog, { sumpId });
+      } else if (res.action === "stop_recording") {
+        const active = catalog.getActiveRecordingSessionForSump(sumpId);
+        if (active) {
+          await stopRecordingSession(catalog, {
+            sessionId: active.id,
+            exportSegmentFn: makeRecordingExportSegmentFn(
+              catalogPath,
+              fetchFn,
+              userId,
+              segmentRouting,
+            ),
+          });
+        }
+      } else if (res.action === "notify") {
+        notifyWindows({ message: `Event rule "${res.ruleName}" triggered`, severity: "info" });
+      }
+    }
   };
   // RM-000029: scoped to this call, not module-level -- real Electron
   // only ever calls registerIpcHandlers once per app lifetime, so this
@@ -573,9 +618,7 @@ export async function registerIpcHandlers(
     }
   });
 
-  electronApi.ipcMain.handle("query-records", async (...args: unknown[]) => {
-    const [, sumpId, params = {}] = args as [unknown, string, RecordsQueryParams];
-
+  const queryRecords = async (sumpId: string, params: RecordsQueryParams) => {
     const sump = resolveSump(catalogPath, sumpId);
     if (!sump.dockerHost) {
       throw new Error(`sump ${sumpId} has no docker_host scope -- target a host-scoped sump`);
@@ -593,6 +636,11 @@ export async function registerIpcHandlers(
     }
     touchSump(catalogPath, sumpId);
     return response.json();
+  };
+
+  electronApi.ipcMain.handle("query-records", async (...args: unknown[]) => {
+    const [, sumpId, params = {}] = args as [unknown, string, RecordsQueryParams];
+    return queryRecords(sumpId, params);
   });
 
   electronApi.ipcMain.handle("download-recording", async (...args: unknown[]) => {
@@ -1117,6 +1165,7 @@ export async function registerIpcHandlers(
         threshold?: number;
         pattern?: string;
         action: EventAction;
+        hosting?: EventHosting;
       },
     ];
     mkdirSync(dirname(catalogPath), { recursive: true });
@@ -1134,6 +1183,7 @@ export async function registerIpcHandlers(
       action: params.action,
       enabled: true,
       createdAt: new Date().toISOString(),
+      hosting: params.hosting === "app" ? "app" : "view",
     };
     try {
       catalog.upsertEventRule(rule);
@@ -1171,36 +1221,58 @@ export async function registerIpcHandlers(
     mkdirSync(dirname(catalogPath), { recursive: true });
     const catalog = new Catalog(catalogPath);
     try {
-      const rules = catalog.listEventRulesForSump(params.sumpId);
+      // cor-CORE.EVENT-000003 §3: the view evaluates only its view-hosted rules.
+      const rules = rulesHostedBy(catalog.listEventRulesForSump(params.sumpId), "view");
       const results = evaluateEventRules(rules, params.samples);
-
-      // Perform automated actions (start/stop recording sessions)
-      for (const res of results) {
-        if (res.triggered) {
-          if (res.action === "start_recording") {
-            startRecordingSession(catalog, { sumpId: params.sumpId });
-          } else if (res.action === "stop_recording") {
-            const active = catalog.getActiveRecordingSessionForSump(params.sumpId);
-            if (active) {
-              await stopRecordingSession(catalog, {
-                sessionId: active.id,
-                exportSegmentFn: makeRecordingExportSegmentFn(
-                  catalogPath,
-                  fetchFn,
-                  userId,
-                  segmentRouting,
-                ),
-              });
-            }
-          }
-        }
-      }
-
+      await runRuleActions(
+        catalog,
+        params.sumpId,
+        results.filter((r) => r.triggered),
+      );
       return results;
     } finally {
       catalog.close();
     }
   });
+
+  // cor-CORE.EVENT-000003 §2: the app-hosted rule watcher -- per Sump, the
+  // records since its previous pass, edge-triggered across passes.
+  const lastAppPass = new Map<string, number>();
+  const lastTriggered = new Map<string, boolean>();
+  const pollAppHostedRules = async (nowMs: number = Date.now()): Promise<void> => {
+    mkdirSync(dirname(catalogPath), { recursive: true });
+    const catalog = new Catalog(catalogPath);
+    try {
+      const bySump = new Map<string, EventRuleRow[]>();
+      for (const rule of catalog.listEnabledAppHostedRules()) {
+        bySump.set(rule.sumpId, [...(bySump.get(rule.sumpId) ?? []), rule]);
+      }
+      for (const [sumpId, rules] of bySump) {
+        const since =
+          lastAppPass.get(sumpId) ?? nowMs - (appRuleIntervalMs ?? APP_RULE_INTERVAL_MS);
+        try {
+          const page = (await queryRecords(sumpId, {
+            kind: "both",
+            start: new Date(since).toISOString(),
+            end: new Date(nowMs).toISOString(),
+          })) as { records: TelemetrySample[] };
+          lastAppPass.set(sumpId, nowMs);
+          const rising = risingEdges(evaluateEventRules(rules, page.records), lastTriggered);
+          await runRuleActions(catalog, sumpId, rising);
+        } catch {
+          // An unreachable Sump is retried next pass, from the same point.
+        }
+      }
+    } finally {
+      catalog.close();
+    }
+  };
+  if (appRuleIntervalMs !== undefined && appRuleIntervalMs > 0) {
+    const timer = setInterval(() => {
+      void pollAppHostedRules();
+    }, appRuleIntervalMs);
+    (timer as { unref?: () => void }).unref?.();
+  }
 
   // RM-000030: the real app version + runtime metadata for the About
   // dialog -- previously a hardcoded "0.1.0" literal in the renderer,
@@ -1296,7 +1368,7 @@ export async function registerIpcHandlers(
     }
   });
 
-  return { projectSession };
+  return { projectSession, pollAppHostedRules };
 }
 
 export type OpenedFileKind = "track" | "recording" | "project" | null;

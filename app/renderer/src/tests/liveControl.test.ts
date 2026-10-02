@@ -41,3 +41,14 @@ describe("cor-CORE.EXPORT-000003: armed capture", () => {
     expect(render(true, false)).not.toContain("data-capture-armed");
   });
 });
+
+describe("cor-CORE.EVENT-000003: rule hosting choice", () => {
+  it("offers view (the default) and app hosting in the rule form", () => {
+    const markup = render(true);
+    expect(markup).toMatch(/<select[^>]*name="hosting"/);
+    expect(markup).toContain(
+      '<option value="view" selected="">View: only while this view is open</option>',
+    );
+    expect(markup).toContain("App: keeps watching while correlator runs");
+  });
+});

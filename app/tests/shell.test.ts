@@ -2324,3 +2324,105 @@ describe("cor-CORE.EXPORT-000004: save-export-file IPC", () => {
     }
   });
 });
+
+describe("cor-CORE.EVENT-000003: app-hosted rule watcher", () => {
+  async function setup(records: () => unknown[]) {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    const catalogPath = join(dir, "catalog.db");
+    const { Catalog } = await import("../lib/catalog.ts");
+    const seeded = new Catalog(catalogPath);
+    seeded.upsertSump({
+      id: "sump-1",
+      name: "seeded",
+      connectionType: "logical",
+      host: "127.0.0.1",
+      port: 5170,
+      status: "active",
+      authToken: "tok",
+      catalogJson: "{}",
+      createdAt: "2026-09-08T00:00:00Z",
+      lastSeenAt: null,
+      dockerHost: "h1",
+    });
+    const rule = (id: string, hosting: "app" | "view") => ({
+      id,
+      sumpId: "sump-1",
+      name: `cpu ${hosting}`,
+      conditionType: "metric" as const,
+      metricName: "cpu_pct",
+      operator: "gt" as const,
+      threshold: 50,
+      pattern: null,
+      action: "notify" as const,
+      enabled: true,
+      createdAt: "2026-10-02T00:00:00Z",
+      hosting,
+    });
+    seeded.upsertEventRule(rule("ev-app", "app"));
+    seeded.upsertEventRule(rule("ev-view", "view"));
+    seeded.close();
+    const urls: URL[] = [];
+    const fakeFetch = vi.fn(async (url: URL) => {
+      urls.push(url);
+      return new Response(JSON.stringify({ records: records() }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const win = new electronApi.BrowserWindow({}) as unknown as {
+      webContents: { send: ReturnType<typeof vi.fn> };
+    };
+    const ipc = await registerIpcHandlers(electronApi, catalogPath, fakeFetch, testUserId);
+    const notices = () =>
+      win.webContents.send.mock.calls.filter((c) => c[0] === "main-notification").map((c) => c[1]);
+    return { dir, urls, ipc, notices, catalogPath };
+  }
+  const metric = (cpu: number) => ({
+    kind: "metric",
+    ts: "2026-10-02T00:00:05Z",
+    cpu_pct: cpu,
+    docker_host: "h1",
+  });
+
+  it("evaluates only app-hosted rules, over the records since the last pass", async () => {
+    const { dir, urls, ipc, notices } = await setup(() => [metric(80)]);
+    try {
+      await ipc.pollAppHostedRules(100_000);
+      expect(urls).toHaveLength(1);
+      expect(urls[0].searchParams.get("start")).toBe(new Date(90_000).toISOString());
+      expect(urls[0].searchParams.get("end")).toBe(new Date(100_000).toISOString());
+      expect(notices()).toEqual([{ message: 'Event rule "cpu app" triggered', severity: "info" }]);
+      await ipc.pollAppHostedRules(110_000);
+      expect(urls[1].searchParams.get("start")).toBe(new Date(100_000).toISOString());
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("is edge-triggered: a sustained condition acts once, and again after it clears", async () => {
+    let cpu = 80;
+    const { dir, ipc, notices } = await setup(() => [metric(cpu)]);
+    try {
+      await ipc.pollAppHostedRules(100_000);
+      await ipc.pollAppHostedRules(110_000);
+      expect(notices()).toHaveLength(1);
+      cpu = 10;
+      await ipc.pollAppHostedRules(120_000);
+      cpu = 90;
+      await ipc.pollAppHostedRules(130_000);
+      expect(notices()).toHaveLength(2);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("evaluate-event-rules (the view) evaluates only view-hosted rules", async () => {
+    const { dir } = await setup(() => []);
+    try {
+      const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+        (call) => call[0] === "evaluate-event-rules",
+      )?.[1] as (...args: unknown[]) => Promise<{ ruleId: string }[]>;
+      const results = await handler(null, { sumpId: "sump-1", samples: [metric(80)] });
+      expect(results.map((r) => r.ruleId)).toEqual(["ev-view"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

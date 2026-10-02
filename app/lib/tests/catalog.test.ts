@@ -128,6 +128,7 @@ describe("Catalog", () => {
       action: "start_recording",
       enabled: true,
       createdAt: "2026-09-16T10:00:00Z",
+      hosting: "view",
     });
 
     const rules = catalog.listEventRulesForSump("sump-1");
@@ -577,5 +578,68 @@ describe("Catalog", () => {
       expect(catalog.getSump("root-2:host-b")?.status).toBe("active");
       catalog.close();
     });
+  });
+});
+
+describe("cor-CORE.EVENT-000003: event rule hosting", () => {
+  const sump = {
+    id: "sump-1",
+    name: "s",
+    connectionType: "local" as const,
+    host: null,
+    port: 8080,
+    status: "active" as const,
+    authToken: "tok",
+    catalogJson: "{}",
+    createdAt: "2026-10-02T00:00:00Z",
+    lastSeenAt: null,
+  };
+  const rule = (id: string, hosting: "app" | "view", enabled = true) => ({
+    id,
+    sumpId: "sump-1",
+    name: id,
+    conditionType: "log" as const,
+    metricName: null,
+    operator: null,
+    threshold: null,
+    pattern: "ERROR",
+    action: "notify" as const,
+    enabled,
+    createdAt: `2026-10-02T00:00:0${id.length % 10}Z`,
+    hosting,
+  });
+
+  it("round-trips hosting, and lists only enabled app-hosted rules for the watcher", () => {
+    const catalog = new Catalog(dbPath);
+    catalog.upsertSump(sump);
+    catalog.upsertEventRule(rule("a", "app"));
+    catalog.upsertEventRule(rule("bb", "view"));
+    catalog.upsertEventRule(rule("ccc", "app", false));
+    expect(catalog.getEventRule("a")?.hosting).toBe("app");
+    expect(catalog.getEventRule("bb")?.hosting).toBe("view");
+    expect(catalog.listEnabledAppHostedRules().map((r) => r.id)).toEqual(["a"]);
+    catalog.close();
+  });
+
+  it("migrates a database from before hosting: existing rules become view-hosted", () => {
+    const old = new DatabaseSync(dbPath);
+    old.exec(`
+      CREATE TABLE sumps (id TEXT PRIMARY KEY, name TEXT NOT NULL, connection_type TEXT NOT NULL,
+        host TEXT, port INTEGER NOT NULL, status TEXT NOT NULL, auth_token TEXT, catalog_json TEXT,
+        created_at TEXT NOT NULL, last_seen_at TEXT);
+      CREATE TABLE event_rules (id TEXT PRIMARY KEY, sump_id TEXT NOT NULL REFERENCES sumps(id),
+        name TEXT NOT NULL, condition_type TEXT NOT NULL, metric_name TEXT, operator TEXT,
+        threshold REAL, pattern TEXT, action TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL);
+      INSERT INTO sumps (id, name, connection_type, port, status, created_at)
+        VALUES ('sump-1', 's', 'local', 8080, 'active', '2026-10-01T00:00:00Z');
+      INSERT INTO event_rules (id, sump_id, name, condition_type, pattern, action, created_at)
+        VALUES ('old', 'sump-1', 'old', 'log', 'ERROR', 'notify', '2026-10-01T00:00:00Z');
+    `);
+    old.close();
+    const catalog = new Catalog(dbPath);
+    expect(catalog.getEventRule("old")?.hosting).toBe("view");
+    expect(catalog.listEnabledAppHostedRules()).toEqual([]);
+    catalog.close();
   });
 });

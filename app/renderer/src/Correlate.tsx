@@ -121,6 +121,7 @@ export function Correlate({
   const [action, setAction] = useState<"start_recording" | "stop_recording" | "notify">(
     "start_recording",
   );
+  const [hosting, setHosting] = useState<"app" | "view">("view");
 
   const loadEventRules = useCallback(async () => {
     try {
@@ -326,6 +327,7 @@ export function Correlate({
         threshold: conditionType === "metric" ? Number(threshold) : undefined,
         pattern: conditionType === "log" ? pattern : undefined,
         action,
+        hosting,
       });
       setRuleName("");
       loadEventRules();
@@ -613,6 +615,17 @@ export function Correlate({
             <option value="notify">Notify Only</option>
           </select>
 
+          {/* cor-CORE.EVENT-000003 §4: fixed once the rule exists. */}
+          <select
+            name="hosting"
+            aria-label="Where the rule runs"
+            value={hosting}
+            onChange={(e) => setHosting(e.target.value as "app" | "view")}
+          >
+            <option value="view">View: only while this view is open</option>
+            <option value="app">App: keeps watching while correlator runs</option>
+          </select>
+
           <button type="submit">Add Rule</button>
         </form>
 
@@ -631,7 +644,10 @@ export function Correlate({
                   {rule.conditionType === "metric"
                     ? `${rule.metricName} ${rule.operator} ${rule.threshold}`
                     : `/${rule.pattern}/`}{" "}
-                  ➔ <em>{rule.action}</em>
+                  ➔ <em>{rule.action}</em>{" "}
+                  <span data-hosting={rule.hosting} style={{ color: "var(--muted)" }}>
+                    ({rule.hosting === "app" ? "app" : "view"})
+                  </span>
                   <button
                     type="button"
                     onClick={() => handleToggleRule(rule.id, rule.enabled)}

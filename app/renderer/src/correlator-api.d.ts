@@ -230,6 +230,8 @@ export interface EventRuleSummary {
   action: "start_recording" | "stop_recording" | "notify";
   enabled: boolean;
   createdAt: string;
+  /** cor-CORE.EVENT-000003: who evaluates it. */
+  hosting: "app" | "view";
 }
 
 export interface CreateEventRuleParams {
@@ -241,6 +243,8 @@ export interface CreateEventRuleParams {
   threshold?: number;
   pattern?: string;
   action: "start_recording" | "stop_recording" | "notify";
+  /** cor-CORE.EVENT-000003: default "view". */
+  hosting?: "app" | "view";
 }
 
 export interface RuleEvaluationSummary {

@@ -4,6 +4,9 @@ import {
   evaluateEventRule,
   evaluateEventRules,
   RollingBuffer,
+  type RuleEvaluationResult,
+  risingEdges,
+  rulesHostedBy,
   type TelemetrySample,
 } from "../events.ts";
 
@@ -57,6 +60,7 @@ describe("evaluateEventRule", () => {
       action: "start_recording",
       enabled: true,
       createdAt: "2026-09-16T10:00:00Z",
+      hosting: "view",
     };
 
     const samples: TelemetrySample[] = [
@@ -83,6 +87,7 @@ describe("evaluateEventRule", () => {
       action: "notify",
       enabled: true,
       createdAt: "2026-09-16T10:00:00Z",
+      hosting: "view",
     };
 
     const samples: TelemetrySample[] = [
@@ -113,6 +118,7 @@ describe("evaluateEventRule", () => {
       action: "start_recording",
       enabled: false,
       createdAt: "2026-09-16T10:00:00Z",
+      hosting: "view",
     };
 
     const samples: TelemetrySample[] = [
@@ -122,5 +128,32 @@ describe("evaluateEventRule", () => {
     const result = evaluateEventRule(rule, samples);
     expect(result.triggered).toBe(false);
     expect(result.matchingSamples).toHaveLength(0);
+  });
+});
+
+describe("cor-CORE.EVENT-000003: hosting helpers", () => {
+  it("rulesHostedBy keeps only the given host's rules", () => {
+    const rules = [
+      { id: "a", hosting: "app" },
+      { id: "v", hosting: "view" },
+    ] as EventRuleRow[];
+    expect(rulesHostedBy(rules, "app").map((r) => r.id)).toEqual(["a"]);
+    expect(rulesHostedBy(rules, "view").map((r) => r.id)).toEqual(["v"]);
+  });
+
+  it("risingEdges returns only rules that just became triggered", () => {
+    const result = (ruleId: string, triggered: boolean) =>
+      ({
+        ruleId,
+        ruleName: ruleId,
+        action: "notify",
+        triggered,
+        matchingSamples: [],
+      }) as RuleEvaluationResult;
+    const last = new Map<string, boolean>();
+    expect(risingEdges([result("r", true)], last).map((r) => r.ruleId)).toEqual(["r"]);
+    expect(risingEdges([result("r", true)], last)).toEqual([]);
+    expect(risingEdges([result("r", false)], last)).toEqual([]);
+    expect(risingEdges([result("r", true)], last).map((r) => r.ruleId)).toEqual(["r"]);
   });
 });

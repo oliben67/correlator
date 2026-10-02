@@ -152,3 +152,25 @@ export function evaluateEventRules(
 ): RuleEvaluationResult[] {
   return rules.map((rule) => evaluateEventRule(rule, samples));
 }
+
+/** cor-CORE.EVENT-000003: the rules a given host evaluates. */
+export function rulesHostedBy(
+  rules: EventRuleRow[],
+  hosting: EventRuleRow["hosting"],
+): EventRuleRow[] {
+  return rules.filter((rule) => rule.hosting === hosting);
+}
+
+/**
+ * cor-CORE.EVENT-000003 §2: edge triggering for the app watcher. Returns the
+ * results that just went from not triggered to triggered, and updates
+ * `lastTriggered` (rule id -> triggered on the previous pass).
+ */
+export function risingEdges(
+  results: RuleEvaluationResult[],
+  lastTriggered: Map<string, boolean>,
+): RuleEvaluationResult[] {
+  const rising = results.filter((r) => r.triggered && !lastTriggered.get(r.ruleId));
+  for (const r of results) lastTriggered.set(r.ruleId, r.triggered);
+  return rising;
+}
