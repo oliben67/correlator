@@ -33,7 +33,12 @@ import {
 import { resumeLive } from "./correlate/correlate.js";
 import { EventDensityLane } from "./correlate/EventDensityLane.js";
 import { LogPanel } from "./correlate/LogPanel.js";
-import { LatestRequest, loadWindow, REFETCH_DEBOUNCE_MS } from "./correlate/liveView.js";
+import {
+  LatestRequest,
+  LiveReturnTracker,
+  loadWindow,
+  REFETCH_DEBOUNCE_MS,
+} from "./correlate/liveView.js";
 import { Navigator } from "./correlate/Navigator.js";
 import { recordingBands } from "./correlate/recordingBands.js";
 import {
@@ -183,10 +188,15 @@ export function Correlate({
     }
   }, [sumpId]);
 
-  // A (re)mounted or switched view starts live on the default window.
+  const liveReturn = useRef(new LiveReturnTracker(live));
+
+  // A (re)mounted or switched view starts live on the default window. Its own
+  // load below reports errors; flipping a paused view to live here must not
+  // also fire the quiet "back to live" reload (BUG-000014).
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset per Sump.
   useEffect(() => {
     setCursorT(null);
+    if (!store.get(liveAtom)) liveReturn.current.expectOwnReturn();
     store.set(liveAtom, true);
     store.set(captureArmedAtom, false);
     store.set(resumeAtAtom, null);
@@ -201,10 +211,8 @@ export function Correlate({
 
   // cor-CORE.CORRELATE-000011 §6: going back to live (Resume, the navigator's
   // "now", a due resume, or another window) reloads at once.
-  const wasLive = useRef(live);
   useEffect(() => {
-    if (live && !wasLive.current) load(true);
-    wasLive.current = live;
+    if (liveReturn.current.observe(live)) load(true);
   }, [live, load]);
 
   // cor-CORE.CORRELATE-000009 §5: a paused view that moves is re-queried.

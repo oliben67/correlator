@@ -43,3 +43,32 @@ export class LatestRequest {
     return ticket === this.latest;
   }
 }
+
+/**
+ * cor-CORE.CORRELATE-000011 §6: when going back to live should reload. The
+ * view's own reset to live (opening it, switching its Sump) already runs its
+ * own, reporting load, so that switch must not also fire a quiet reload that
+ * supersedes it (BUG-000014). The reset calls `expectOwnReturn` only when it
+ * actually flips a paused view; the next false -> true transition is then
+ * swallowed once.
+ */
+export class LiveReturnTracker {
+  private ownReturnPending = false;
+
+  constructor(private wasLive: boolean) {}
+
+  expectOwnReturn(): void {
+    this.ownReturnPending = true;
+  }
+
+  /** Whether `live` just turned on from elsewhere (and so should reload). */
+  observe(live: boolean): boolean {
+    const turnedOn = live && !this.wasLive;
+    this.wasLive = live;
+    if (turnedOn && this.ownReturnPending) {
+      this.ownReturnPending = false;
+      return false;
+    }
+    return turnedOn;
+  }
+}

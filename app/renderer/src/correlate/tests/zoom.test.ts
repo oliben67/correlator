@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { dragBand, dragMode, resolveRelease, resolveWheel } from "../gestures.js";
-import { LatestRequest, liveTrackTime, loadWindow } from "../liveView.js";
+import { LatestRequest, LiveReturnTracker, liveTrackTime, loadWindow } from "../liveView.js";
 import {
   isClick,
   MAX_SPAN_MS,
@@ -159,5 +159,26 @@ describe("cor-CORE.CORRELATE-000011: live-track marker", () => {
     expect(liveTrackTime(10_000, false, on)).toBeNull();
     expect(liveTrackTime(10_000, true, { ...on, liveTrackEnabled: false })).toBeNull();
     expect(liveTrackTime(null, true, on)).toBeNull();
+  });
+});
+
+// BUG-000014 regression: reopening (or switching the Sump of) a paused view
+// used to fire a quiet "back to live" reload that superseded the view's own
+// reporting load, so a failing view-hosted rule action went unreported.
+describe("BUG-000014: LiveReturnTracker", () => {
+  it("swallows the view's own reset of a paused view to live, once", () => {
+    const tracker = new LiveReturnTracker(false);
+    tracker.expectOwnReturn();
+    expect(tracker.observe(false)).toBe(false); // the reset's own render
+    expect(tracker.observe(true)).toBe(false); // the reset's switch: no extra load
+    expect(tracker.observe(false)).toBe(false); // the user pauses
+    expect(tracker.observe(true)).toBe(true); // Resume live: reloads
+  });
+
+  it("reloads when live turns on from elsewhere", () => {
+    const tracker = new LiveReturnTracker(true);
+    expect(tracker.observe(true)).toBe(false);
+    expect(tracker.observe(false)).toBe(false);
+    expect(tracker.observe(true)).toBe(true);
   });
 });
