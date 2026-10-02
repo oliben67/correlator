@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld("correlator", {
   downloadTrack: (params) => ipcRenderer.invoke("download-track", params),
   readRecordingArchive: (filePath) => ipcRenderer.invoke("read-recording-archive", filePath),
   readTrackArchive: (filePath) => ipcRenderer.invoke("read-track-archive", filePath),
+  saveExportFile: (params) => ipcRenderer.invoke("save-export-file", params),
   listDataSources: (sumpId) => ipcRenderer.invoke("list-data-sources", sumpId),
   setDataSourcePrivacy: (params) => ipcRenderer.invoke("set-data-source-privacy", params),
   promoteDataStream: (params) => ipcRenderer.invoke("promote-data-stream", params),

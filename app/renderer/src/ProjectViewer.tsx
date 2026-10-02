@@ -5,7 +5,9 @@ import { Panel } from "./components/Panel.js";
 import { Chart } from "./correlate/Chart.js";
 import { LogPanel } from "./correlate/LogPanel.js";
 import type { ProjectSummary } from "./correlator-api.js";
+import { ExportWizard } from "./ExportWizard.js";
 import { referenceLabel } from "./project.js";
+import type { ExportItem } from "./projectExport.js";
 import {
   type LoadedArchive,
   mergeRecordingRows,
@@ -59,16 +61,20 @@ export interface ProjectViewerProps {
 }
 
 export function ProjectViewer({ project, archives, onToggle, onDelay, onFit }: ProjectViewerProps) {
+  const [exportOpen, setExportOpen] = useState(false);
   const renderable = project.references.filter((path) => referenceKind(path) !== "other");
   if (renderable.length === 0) return null;
 
   const strips: { path: string; label: string; points: ReturnType<typeof trackToChartPoints> }[] =
     [];
   const recordings: Parameters<typeof mergeRecordingRows>[0][number][] = [];
+  // cor-CORE.EXPORT-000004: the visible, loaded files, with their own timestamps.
+  const exportItems: ExportItem[] = [];
   for (const path of renderable) {
     const entry = archives[path];
     const { visible, delayMs } = viewStateOf(project, path);
     if (!visible || !entry) continue;
+    if (entry.kind !== "error") exportItems.push({ path, archive: entry });
     if (entry.kind === "track") {
       strips.push({
         path,
@@ -87,7 +93,12 @@ export function ProjectViewer({ project, archives, onToggle, onDelay, onFit }: P
         <h3 style={{ margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
           View <ModeBadge mode="analysis" />
         </h3>
-        <Button onClick={onFit}>Fit</Button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Button onClick={() => setExportOpen(true)} disabled={exportItems.length === 0}>
+            Export…
+          </Button>
+          <Button onClick={onFit}>Fit</Button>
+        </div>
       </div>
       <ul style={{ listStyle: "none", margin: "8px 0", padding: 0 }}>
         {renderable.map((path) => {
@@ -128,6 +139,7 @@ export function ProjectViewer({ project, archives, onToggle, onDelay, onFit }: P
           <Chart points={strip.points} label={strip.label} timeAxis={i === strips.length - 1} />
         </div>
       ))}
+      <ExportWizard open={exportOpen} onClose={() => setExportOpen(false)} items={exportItems} />
       {logRows.length > 0 && (
         <div style={{ marginTop: 8 }} data-logs={logRows.length}>
           <LogPanel rows={logRows} />

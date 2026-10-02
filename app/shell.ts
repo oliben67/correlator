@@ -703,6 +703,25 @@ export async function registerIpcHandlers(
     return readRecordingArchive(new Uint8Array(readFileSync(filePath)));
   });
 
+  // cor-CORE.EXPORT-000004: save a Project-view export where the user picks;
+  // null when cancelled (nothing is written).
+  electronApi.ipcMain.handle("save-export-file", async (...args: unknown[]) => {
+    const [, params] = args as [unknown, { defaultName: string; content: string }];
+    const dialog = electronApi.dialog;
+    if (!dialog) throw new Error("save-export-file needs the native save dialog");
+    const json = params.defaultName.endsWith(".json");
+    const result = await dialog.showSaveDialog({
+      title: "Export",
+      defaultPath: join(homedir(), params.defaultName),
+      filters: [
+        json ? { name: "JSON", extensions: ["json"] } : { name: "Text", extensions: ["txt"] },
+      ],
+    });
+    if (result.canceled || !result.filePath) return null;
+    writeFileSync(result.filePath, params.content, "utf8");
+    return { filePath: result.filePath };
+  });
+
   electronApi.ipcMain.handle("read-track-archive", async (...args: unknown[]) => {
     const [, filePath] = args as [unknown, string];
     return readTrackArchive(new Uint8Array(readFileSync(filePath)));

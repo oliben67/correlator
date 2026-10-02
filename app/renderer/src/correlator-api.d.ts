@@ -347,6 +347,11 @@ export interface CorrelatorApi {
   downloadTrack: (params: DownloadTrackParams) => Promise<DownloadResult>;
   readRecordingArchive: (filePath: string) => Promise<ArchivedRecording>;
   readTrackArchive: (filePath: string) => Promise<ArchivedTrack>;
+  /** cor-CORE.EXPORT-000004: save dialog + write; null when cancelled. */
+  saveExportFile: (params: {
+    defaultName: string;
+    content: string;
+  }) => Promise<{ filePath: string } | null>;
   listDataSources: (sumpId: string) => Promise<DataSourcesResult>;
   setDataSourcePrivacy: (params: SetDataSourcePrivacyParams) => Promise<PrivacyResult>;
   promoteDataStream: (params: PromoteDataStreamParams) => Promise<PromoteResult>;

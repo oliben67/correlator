@@ -172,6 +172,16 @@ describe("cor-CORE.PROJECT-000008: ProjectViewer", () => {
     expect(markup).toMatch(/aria-label="cpu_pct · container" data-time-axis=""/);
   });
 
+  it("cor-CORE.EXPORT-000004: offers Export once a visible file has loaded", () => {
+    expect(render(project())).toMatch(/<button(?![^>]*disabled)[^>]*>Export…<\/button>/);
+    expect(
+      render(project(), {
+        "/r/a.track": { kind: "error", message: "x" },
+        "/r/b.recording": { kind: "error", message: "y" },
+      }),
+    ).toMatch(/<button[^>]*disabled[^>]*>Export…<\/button>/);
+  });
+
   it("renders nothing for a project with no tracks or recordings", () => {
     expect(render(project({ references: ["/r/c.json"] }))).toBe("");
   });

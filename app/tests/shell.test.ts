@@ -2283,3 +2283,44 @@ describe("cor-CORE.PROJECT-000008: set-track-view-state IPC", () => {
     }
   });
 });
+
+describe("cor-CORE.EXPORT-000004: save-export-file IPC", () => {
+  function findHandler(
+    api: ElectronApi,
+    channel: string,
+  ): (...args: unknown[]) => Promise<unknown> {
+    return (api.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+      (call) => call[0] === channel,
+    )?.[1] as (...args: unknown[]) => Promise<unknown>;
+  }
+
+  it("writes the content where the save dialog points, and nothing when cancelled", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "correlator-shell-test-"));
+    try {
+      const target = join(dir, "out.json");
+      const showSaveDialog = vi.fn(async () => ({ canceled: false, filePath: target }));
+      const api: ElectronApi = {
+        ...electronApi,
+        dialog: {
+          showOpenDialog: vi.fn(async () => ({ canceled: true, filePaths: [] })),
+          showSaveDialog,
+        },
+      };
+      await registerIpcHandlers(api, join(dir, "catalog.db"), fetch, testUserId);
+      const handler = findHandler(api, "save-export-file");
+
+      const saved = await handler(null, { defaultName: "project-export-x.json", content: "{}\n" });
+      expect(saved).toEqual({ filePath: target });
+      expect(readFileSync(target, "utf8")).toBe("{}\n");
+      expect(showSaveDialog).toHaveBeenCalledWith(
+        expect.objectContaining({ filters: [{ name: "JSON", extensions: ["json"] }] }),
+      );
+
+      showSaveDialog.mockResolvedValueOnce({ canceled: true, filePath: join(dir, "no.txt") });
+      expect(await handler(null, { defaultName: "project-export-x.txt", content: "x" })).toBeNull();
+      expect(existsSync(join(dir, "no.txt"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
