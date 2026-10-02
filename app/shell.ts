@@ -554,7 +554,9 @@ export async function registerIpcHandlers(
 
   // cor-CORE.EVENT-000001 §3: what a triggered rule does, for either host.
   // `notify` is sent to the windows only for app-hosted rules: the view shows
-  // its own alert banner (BUG-000012). One failing action never stops the rest.
+  // its own alert banner (BUG-000012). For the view, a failing action rejects
+  // the call, so the view shows the error (BUG-000013); the app watcher has no
+  // caller, so there one failing action never stops the rest.
   const runRuleActions = async (
     catalog: Catalog,
     sumpId: string,
@@ -562,10 +564,14 @@ export async function registerIpcHandlers(
     hosting: EventHosting,
   ): Promise<void> => {
     for (const res of triggered) {
+      if (hosting === "view") {
+        await runRuleAction(catalog, sumpId, res, hosting);
+        continue;
+      }
       try {
         await runRuleAction(catalog, sumpId, res, hosting);
       } catch {
-        // Best effort: the next pass or load tries again.
+        // Best effort: the next pass tries again.
       }
     }
   };

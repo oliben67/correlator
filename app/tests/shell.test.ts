@@ -2428,6 +2428,47 @@ describe("cor-CORE.EVENT-000003: app-hosted rule watcher", () => {
     }
   });
 
+  it("BUG-000013: a failing view-hosted action rejects evaluate-event-rules, so the view sees it", async () => {
+    const { dir, catalogPath } = await setup(() => []);
+    try {
+      const { Catalog } = await import("../lib/catalog.ts");
+      const seeded = new Catalog(catalogPath);
+      seeded.upsertEventRule({
+        id: "ev-stop",
+        sumpId: "sump-1",
+        name: "stop on cpu",
+        conditionType: "metric",
+        metricName: "cpu_pct",
+        operator: "gt",
+        threshold: 50,
+        pattern: null,
+        action: "stop_recording",
+        enabled: true,
+        createdAt: "2026-10-02T00:00:01Z",
+        hosting: "view",
+      });
+      // A recording session whose stored segments can't be read: stopping it throws.
+      seeded.upsertRecordingSession({
+        id: "sess-1",
+        sumpId: "sump-1",
+        status: "recording",
+        startedAt: "2026-10-02T00:00:00Z",
+        stoppedAt: null,
+        activeSegmentStartedAt: "2026-10-02T00:00:00Z",
+        segmentsJson: "not json",
+        wasInterrupted: false,
+        createdAt: "2026-10-02T00:00:00Z",
+      });
+      seeded.close();
+      const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+        (call) => call[0] === "evaluate-event-rules",
+      )?.[1] as (...args: unknown[]) => Promise<unknown>;
+      await expect(handler(null, { sumpId: "sump-1", samples: [metric(80)] })).rejects.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("evaluate-event-rules (the view) evaluates only view-hosted rules", async () => {
     const { dir } = await setup(() => []);
     try {
