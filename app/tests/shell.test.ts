@@ -2413,6 +2413,21 @@ describe("cor-CORE.EVENT-000003: app-hosted rule watcher", () => {
     }
   });
 
+  it("BUG-000012: a triggered view-hosted notify rule sends no window notification", async () => {
+    const { dir, notices } = await setup(() => []);
+    try {
+      const handler = (electronApi.ipcMain.handle as ReturnType<typeof vi.fn>).mock.calls.find(
+        (call) => call[0] === "evaluate-event-rules",
+      )?.[1] as (...args: unknown[]) => Promise<{ ruleId: string; triggered: boolean }[]>;
+      const results = await handler(null, { sumpId: "sump-1", samples: [metric(80)] });
+      expect(results).toEqual([expect.objectContaining({ ruleId: "ev-view", triggered: true })]);
+      // The view shows its own alert banner; before the fix every load also toasted.
+      expect(notices()).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("evaluate-event-rules (the view) evaluates only view-hosted rules", async () => {
     const { dir } = await setup(() => []);
     try {

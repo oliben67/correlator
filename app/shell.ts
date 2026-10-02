@@ -553,30 +553,45 @@ export async function registerIpcHandlers(
   };
 
   // cor-CORE.EVENT-000001 §3: what a triggered rule does, for either host.
+  // `notify` is sent to the windows only for app-hosted rules: the view shows
+  // its own alert banner (BUG-000012). One failing action never stops the rest.
   const runRuleActions = async (
     catalog: Catalog,
     sumpId: string,
     triggered: RuleEvaluationResult[],
+    hosting: EventHosting,
   ): Promise<void> => {
     for (const res of triggered) {
-      if (res.action === "start_recording") {
-        startRecordingSession(catalog, { sumpId });
-      } else if (res.action === "stop_recording") {
-        const active = catalog.getActiveRecordingSessionForSump(sumpId);
-        if (active) {
-          await stopRecordingSession(catalog, {
-            sessionId: active.id,
-            exportSegmentFn: makeRecordingExportSegmentFn(
-              catalogPath,
-              fetchFn,
-              userId,
-              segmentRouting,
-            ),
-          });
-        }
-      } else if (res.action === "notify") {
-        notifyWindows({ message: `Event rule "${res.ruleName}" triggered`, severity: "info" });
+      try {
+        await runRuleAction(catalog, sumpId, res, hosting);
+      } catch {
+        // Best effort: the next pass or load tries again.
       }
+    }
+  };
+  const runRuleAction = async (
+    catalog: Catalog,
+    sumpId: string,
+    res: RuleEvaluationResult,
+    hosting: EventHosting,
+  ): Promise<void> => {
+    if (res.action === "start_recording") {
+      startRecordingSession(catalog, { sumpId });
+    } else if (res.action === "stop_recording") {
+      const active = catalog.getActiveRecordingSessionForSump(sumpId);
+      if (active) {
+        await stopRecordingSession(catalog, {
+          sessionId: active.id,
+          exportSegmentFn: makeRecordingExportSegmentFn(
+            catalogPath,
+            fetchFn,
+            userId,
+            segmentRouting,
+          ),
+        });
+      }
+    } else if (res.action === "notify" && hosting === "app") {
+      notifyWindows({ message: `Event rule "${res.ruleName}" triggered`, severity: "info" });
     }
   };
   // RM-000029: scoped to this call, not module-level -- real Electron
@@ -1228,6 +1243,7 @@ export async function registerIpcHandlers(
         catalog,
         params.sumpId,
         results.filter((r) => r.triggered),
+        "view",
       );
       return results;
     } finally {
@@ -1258,7 +1274,7 @@ export async function registerIpcHandlers(
           })) as { records: TelemetrySample[] };
           lastAppPass.set(sumpId, nowMs);
           const rising = risingEdges(evaluateEventRules(rules, page.records), lastTriggered);
-          await runRuleActions(catalog, sumpId, rising);
+          await runRuleActions(catalog, sumpId, rising, "app");
         } catch {
           // An unreachable Sump is retried next pass, from the same point.
         }
