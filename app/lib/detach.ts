@@ -41,13 +41,15 @@ function isDetachPanelKind(value: string | null): value is DetachPanelKind {
 }
 
 /** The slice of shared view state (cor-CORE.CORRELATE-001's viewAtom /
- * cursorTAtom) a detached window needs at open time -- live updates
- * after that travel over the sync-broadcast relay, not the URL. */
+ * cursorTAtom, and cor-CORE.CORRELATE-000009's live flag) a detached
+ * window needs at open time -- live updates after that travel over the
+ * sync-broadcast relay, not the URL. */
 export interface DetachViewState {
   sumpId?: string;
   t0?: number;
   t1?: number;
   cursorT?: number | null;
+  live?: boolean;
 }
 
 export function buildDetachSearch(kind: DetachPanelKind, state: DetachViewState): string {
@@ -58,6 +60,7 @@ export function buildDetachSearch(kind: DetachPanelKind, state: DetachViewState)
   if (state.cursorT !== undefined && state.cursorT !== null) {
     params.set("cursorT", String(state.cursorT));
   }
+  if (state.live !== undefined) params.set("live", String(state.live));
   return params.toString();
 }
 
@@ -77,6 +80,7 @@ export function parseDetachSearch(search: string): ParsedDetachSearch {
   const t0raw = params.get("t0");
   const t1raw = params.get("t1");
   const cursorTraw = params.get("cursorT");
+  const liveRaw = params.get("live");
   return {
     kind,
     state: {
@@ -84,6 +88,7 @@ export function parseDetachSearch(search: string): ParsedDetachSearch {
       t0: t0raw === null ? undefined : Number(t0raw),
       t1: t1raw === null ? undefined : Number(t1raw),
       cursorT: cursorTraw === null ? undefined : Number(cursorTraw),
+      live: liveRaw === "true" ? true : liveRaw === "false" ? false : undefined,
     },
   };
 }

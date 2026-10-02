@@ -492,7 +492,7 @@ export function Correlate({
           {onDetach && (
             <button
               type="button"
-              onClick={() => onDetach("chart", { sumpId, t0: view.t0, t1: view.t1, cursorT })}
+              onClick={() => onDetach("chart", { sumpId, t0: view.t0, t1: view.t1, cursorT, live })}
               title="Detach chart into its own window"
               style={{
                 float: "right",
@@ -513,7 +513,7 @@ export function Correlate({
         {onDetach && (
           <button
             type="button"
-            onClick={() => onDetach("log", { sumpId, t0: view.t0, t1: view.t1, cursorT })}
+            onClick={() => onDetach("log", { sumpId, t0: view.t0, t1: view.t1, cursorT, live })}
             title="Detach log panel into its own window"
             style={{ float: "right", background: "transparent", border: "none", cursor: "pointer" }}
           >

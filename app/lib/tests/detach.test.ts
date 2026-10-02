@@ -35,6 +35,14 @@ describe("buildDetachSearch / parseDetachSearch", () => {
     });
   });
 
+  it("BUG-000011: round-trips the live flag, and omits it when not given", () => {
+    const paused = parseDetachSearch(buildDetachSearch("chart", { sumpId: "s", live: false }));
+    expect(paused.state.live).toBe(false);
+    expect(parseDetachSearch(buildDetachSearch("chart", { live: true })).state.live).toBe(true);
+    expect(buildDetachSearch("chart", { sumpId: "s" })).not.toContain("live");
+    expect(parseDetachSearch("?detach=chart&live=maybe").state.live).toBeUndefined();
+  });
+
   it("omits cursorT from the query string when null", () => {
     const search = buildDetachSearch("log", { sumpId: "sump-1", t0: 0, t1: 1000, cursorT: null });
     expect(search).not.toContain("cursorT");
